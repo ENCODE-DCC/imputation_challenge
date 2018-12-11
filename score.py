@@ -5,6 +5,7 @@
 import sys
 import argparse
 import numpy
+import math
 import pyBigWig
 from sklearn.metrics import roc_auc_score
 import logging
@@ -99,67 +100,78 @@ def aucimp1(y_true, y_pred):
 def mseprom(y_true, y_pred, chrom, gene_annotations, window_size=25, prom_loc=80):
     sse, n = 0., 0.
 
-    with open(gene_annotations, 'r') as infile:
-        for line in infile:
-            chrom_, start, end, _, _, strand = line.split()
-            start = int(start) // window_size
-            end = int(end) // window_size + 1
-            
-            # if chrom_ in ('chrX', 'chrY', 'chrM'):
-            #     continue
+    for line in gene_annotations:
+        chrom_, start, end, _, _, strand = line.split()
+        start = int(start) // window_size
+        end = int(end) // window_size + 1
+        
+        # if chrom_ in ('chrX', 'chrY', 'chrM'):
+        #     continue
 
-            if chrom_ != chrom:
-                continue
+        if chrom_ != chrom:
+            continue
 
-            if strand == '+':
-                sse += ((y_true[start-prom_loc: start] - y_pred[start-prom_loc: start]) ** 2).sum()
-                n += y_true[start-prom_loc: start].shape[0]
+        if strand == '+':
+            sse += ((y_true[start-prom_loc: start] - y_pred[start-prom_loc: start]) ** 2).sum()
+            n += y_true[start-prom_loc: start].shape[0]
 
-            else:
-                sse += ((y_true[end: end+prom_loc] - y_pred[end: end+prom_loc]) ** 2).sum()
-                n += y_true[end: end+prom_loc].shape[0]
+        else:
+            sse += ((y_true[end: end+prom_loc] - y_pred[end: end+prom_loc]) ** 2).sum()
+            n += y_true[end: end+prom_loc].shape[0]
 
     return sse / n
 
 def msegene(y_true, y_pred, chrom, gene_annotations, window_size=25):
     sse, n = 0., 0.
 
-    with open(gene_annotations, 'r') as infile:
-        for line in infile:
-            chrom_, start, end, _, _, strand = line.split()
-            start = int(start) // window_size
-            end = int(end) // window_size + 1
-            
-            # if chrom_ in ('chrX', 'chrY', 'chrM'):
-            #     continue
+    for line in gene_annotations:
+        chrom_, start, end, _, _, strand = line.split()
+        start = int(start) // window_size
+        end = int(end) // window_size + 1
+        
+        # if chrom_ in ('chrX', 'chrY', 'chrM'):
+        #     continue
 
-            if chrom_ != chrom:
-                continue
+        if chrom_ != chrom:
+            continue
 
-            sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
-            n += end - start
+        sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
+        n += end - start
 
     return sse / n
 
 def mseenh(y_true, y_pred, chrom, enh_annotations, window_size=25):
     sse, n = 0., 0.
 
-    with open(enh_annotations, 'r') as infile:
-        for line in infile:
-            chrom_, start, end, _, _, _, _, _, _, _, _, _ = line.split()
-            start = int(start) // window_size
-            end = int(end) // window_size + 1
-            
-            # if chrom_ in ('chrX', 'chrY', 'chrM'):
-            #     continue
+    for line in enh_annotations:
+        chrom_, start, end, _, _, _, _, _, _, _, _, _ = line.split()
+        start = int(start) // window_size
+        end = int(end) // window_size + 1
+        
+        # if chrom_ in ('chrX', 'chrY', 'chrM'):
+        #     continue
 
-            if chrom_ != chrom:
-                continue
+        if chrom_ != chrom:
+            continue
 
-            sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
-            n += end - start
+        sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
+        n += end - start
 
     return sse / n
+
+def bw_to_arr(bw, chrom, window_size):
+    result = []    
+    chrom_len = bw.chroms()[chrom]
+    for step in range((chrom_len-1)//window_size+1):
+        start = step*window_size
+        end = min((step+1)*window_size,chrom_len)
+        stat = bw.stats(chrom, start, end, exact=True)
+        # print(start,end,stat)
+        if stat[0]==None:
+            result.append(0)
+        else:
+            result.append(stat[0])
+    return numpy.array(result)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(prog='ENCODE Imputation Challenge scoring script.',
@@ -200,22 +212,35 @@ def main():
     bw_true = pyBigWig.open(args.bw_true)
     bw_predicted = pyBigWig.open(args.bw_predicted)
 
+    log.info('Reading from enh_annotations...')
+    enh_annotations=[]
+    with open(args.enh_annotations, 'r') as infile:
+        for line in infile:
+            enh_annotations.append(line)
+
+    log.info('Reading from gene_annotations...')
+    gene_annotations=[]
+    with open(args.gene_annotations, 'r') as infile:
+        for line in infile:
+            gene_annotations.append(line)
+
     with open(args.out,'w') as fp:
         for chrom in args.chrom:
             log.info('Scoring for chrom {}...'.format(chrom))
-            y_predicted_ = bw_predicted.values(chrom, 0, bw_predicted.chroms()[chrom])
-            y_true_ = bw_true.values(chrom, 0, bw_true.chroms()[chrom])
-            y_predicted = numpy.array(y_predicted_)
-            y_true = numpy.array(y_true_)
+            y_true = bw_to_arr(bw_true, chrom, args.window_size)
+            log.info('y_true_len: {}'.format(len(y_true)))
+            y_predicted = bw_to_arr(bw_predicted, chrom, args.window_size)
+            log.info('y_predicted_len: {}'.format(len(y_predicted)))
 
             output = [chrom]
             for func in mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1:
                 output.append(func(y_true, y_predicted))
-            output.append(mseprom(y_true, y_predicted, args.gene_annotations, args.window_size, args.prom_loc))
-            output.append(msegene(y_true, y_predicted, args.gene_annotations, args.window_size))
-            output.append(mseenh(y_true, y_predicted, args.enh_annotations, args.window_size))
-            fp.write("\t".join(output))
-            print("\t".join(output))
+            output.append(mseprom(y_true, y_predicted, chrom, gene_annotations, args.window_size, args.prom_loc))
+            output.append(msegene(y_true, y_predicted, chrom, gene_annotations, args.window_size))
+            output.append(mseenh(y_true, y_predicted, chrom, enh_annotations, args.window_size))
+            fp.write("\t".join([str(o) for o in output]))
+            fp.write("\n")
+            print("\t".join([str(o) for o in output]))
 
     log.info('All done.')
 
