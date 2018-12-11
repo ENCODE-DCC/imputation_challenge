@@ -1,0 +1,6 @@
+*.bigwig
+*.bigWig
+*.BigWig
+*.bw
+*.bed
+*.bed.gz
