@@ -1,9 +1,6 @@
 # imputation_challenge
 ENCODE Imputation Challenge scoring &amp; validation scripts
 
-# gene_annotations = 'gencode.v19.annotation.protein_coding.full.sorted.genes.bed'
-# enh_annotations = 'human_permissive_enhancers_phase_1_and_2.bed'
-
 ## Installation (pip)
 
 ```bash
