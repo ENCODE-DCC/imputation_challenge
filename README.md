@@ -1,5 +1,4 @@
-# imputation_challenge
-ENCODE Imputation Challenge scoring &amp; validation scripts
+# ENCODE Imputation Challenge Scoring and Validation Scripts
 
 ## Installation (pip)
 
