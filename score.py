@@ -7,6 +7,7 @@ import argparse
 import numpy
 import math
 import pyBigWig
+import gzip
 from sklearn.metrics import roc_auc_score
 import logging
 
@@ -214,15 +215,34 @@ def main():
 
     log.info('Reading from enh_annotations...')
     enh_annotations=[]
-    with open(args.enh_annotations, 'r') as infile:
-        for line in infile:
-            enh_annotations.append(line)
+    if args.enh_annotations.endswith('gz'):
+        with gzip.open(args.enh_annotations, 'r') as infile:
+            for line in infile:
+                enh_annotations.append(line.decode("ascii"))        
+    else:
+        with open(args.enh_annotations, 'r') as infile:
+            for line in infile:
+                enh_annotations.append(line)
 
     log.info('Reading from gene_annotations...')
     gene_annotations=[]
-    with open(args.gene_annotations, 'r') as infile:
-        for line in infile:
-            gene_annotations.append(line)
+
+    if args.gene_annotations.endswith('gz'):
+        with gzip.open(args.gene_annotations, 'r') as infile:
+            for line in infile:
+                gene_annotations.append(line.decode("ascii"))
+    else:
+        with open(args.gene_annotations, 'r') as infile:
+            for line in infile:
+                gene_annotations.append(line)
+
+    # print(len(enh_annotations))
+    # print(len(gene_annotations))
+    # print(enh_annotations[0:2])
+    # print(gene_annotations[0:2])
+    # print(enh_annotations[0].split())
+    # print(gene_annotations[0].split())
+    # sys.exit(1)
 
     with open(args.out,'w') as fp:
         for chrom in args.chrom:
