@@ -160,6 +160,134 @@ def mseenh(y_true, y_pred, chrom, enh_annotations, window_size=25):
 
     return sse / n
 
+def mseVar(y_true, y_pred, y_all):
+    """Calculates the MSE weighted by the cross-cell-type variance.
+
+    According to the wiki: Computing this measure involves computing, 
+    for an assay carried out in cell type x and assay type y, a vector of 
+    variance values across all assays of type y. The squared error between 
+    the predicted and true value at each genomic position is multiplied by 
+    this variance (normalized to sum to 1 across all bins) before being 
+    averaged across the genome.
+
+    Parameters
+    ----------
+    y_true: numpy.ndarray, shape=(n_positions,)
+        The true signal
+
+    y_pred: numpy.ndarray, shape=(n_positions,)
+        The predicted signal
+
+    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
+        The true signal from all the cell types to calculate the variance over.
+
+    Returns
+    -------
+    mse: float
+        The mean-squared error that's weighted at each position by the variance.
+    """
+
+    var = numpy.std(y_all, axis=0) ** 2
+    var /= var.sum()
+    return ((y_true - y_pred) ** 2).dot(var)
+
+def mseSpec(y_true, y_pred, y_all):
+    """Calculates the MSE weighted by the specificity of the signal.
+
+    Anshul has not sent me this yet so I'm not sure what to put here.
+
+    According to the wiki: Test values that are cell type-specific are 
+    typically the hardest to impute; hence, we upweight such bins. A 
+    weight is computed for each bin in the genome based on how specific 
+    the signal is in the test cell type relative to training cell types. 
+    Specifically, for each bin in the genome, we compute the mutual information 
+    between the signal vector for the bin across test and training cell types 
+    [S_t, S_r1, S_r2, S_r3, ....] (where S_t is the signal in the test cell 
+    type and S_ri is the signal value in the i-th training cell type) and an 
+    idealized vector of test cell type specific activation [1,0,0,0,....] as well 
+    as an idealized vector for test cell-type specific repression [0,1,1,1,.....]. 
+    We use as the weight the maximum of these two mutual information values. As 
+    in MSEvar, the weights are normalized across all bins in the genome to sum to 1. 
+    The squared error between the predicted and true value at each genomic position 
+    is multiplied by this weight before being averaged across the genome.
+
+    Parameters
+    ----------
+    y_true: numpy.ndarray, shape=(n_positions,)
+        The true signal
+
+    y_pred: numpy.ndarray, shape=(n_positions,)
+        The predicted signal
+
+    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
+        The true signal from all the cell types to calculate the variance over.
+
+    Returns
+    -------
+    mse: float
+        The mean-squared error that's weighted at each position by the variance.
+    """
+    
+    return 0
+
+def mseSpec2(y_true, y_pred, y_all):
+    """Calculates the MSE weighted by the specificity of the signal.
+
+    This is my implementation of a metric that weights each position by how
+    different it is from the training cell types. Essentially, a normal
+    distribution is fit to the values in the training cell types at each
+    position, and the -logp is calculated for the test set value. This will
+    give high weights to values that are very different, and low weights
+    to values that are similar.
+
+    Parameters
+    ----------
+    y_true: numpy.ndarray, shape=(n_positions,)
+        The true signal
+
+    y_pred: numpy.ndarray, shape=(n_positions,)
+        The predicted signal
+
+    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
+        The true signal from all the cell types to calculate the normal
+        disribution over.
+
+    Returns
+    -------
+    mse: float
+        The mean-squared error that's weighted at each position by -logp.
+    """
+
+    mu = y_all.mean(axis=0)
+    std = y_all.std(axis=0)
+    std[std < 0.01] = 0.01
+    n = y_true.shape[0]
+
+    return (-norm.logpdf(y_pred, mu, std)).dot((y_true - y_pred) ** 2) / n
+
+def mseDiff(y_true, y_pred):
+    """Calculates the MSE over the difference in the tracks.
+
+    This metric captures the smoothness of the signal. The difference between
+    adjacent positions is first calculated for both the real signal and the
+    imputed signal, and then the MSE is calculated over that.
+
+    Parameters
+    ----------
+    y_true: numpy.ndarray, shape=(n_positions,)
+        The true signal
+
+    y_pred: numpy.ndarray, shape=(n_positions,)
+        The predicted signal
+
+    Returns
+    -------
+    mse: float
+        The mean-squared error over the difference.
+    """
+
+    return ((numpy.diff(y_true) - numpy.diff(y_pred)) ** 2).mean()
+
 def bw_to_arr(bw, chrom, window_size):
     result = []    
     chrom_len = bw.chroms()[chrom]
