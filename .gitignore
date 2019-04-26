@@ -1,8 +1,11 @@
+annot/hg19
 *.bigwig
 *.bigWig
 *.BigWig
 *.bw
 *.bed
-*.bed.gz
+#*.bed.gz
 *.score.txt
 test
+test.py
+join.log
