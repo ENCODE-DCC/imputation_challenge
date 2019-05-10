@@ -372,8 +372,8 @@ def main():
     args = parse_arguments()
 
     log.info('Opening bigwig files...')
-    bw_true = pyBigWig.open(args.bw_true)
-    bw_predicted = pyBigWig.open(args.bw_predicted)
+    bw_true = pyBigWig.open(args.bw_true.strip("'"))
+    bw_predicted = pyBigWig.open(args.bw_predicted.strip("'"))
 
     log.info('Reading from enh_annotations...')
     enh_annotations = []
@@ -406,7 +406,7 @@ def main():
     # print(gene_annotations[0].split())
     # sys.exit(1)
 
-    with open(args.out, 'w') as fp:
+    with open(args.out.strip("'"), 'w') as fp:
         for chrom in args.chrom:
             log.info('Scoring for chrom {}...'.format(chrom))
             y_true = bw_to_arr(bw_true, chrom, args.window_size)
