@@ -13,7 +13,7 @@ logging.basicConfig(
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 
-#cat /mnt/data/pipeline_genome_data/hg38/hg38.chrom.sizes | grep -P "chr[\dX]" | grep -v _
+# cat hg38.chrom.sizes | grep -P "chr[\dX]" | grep -v _
 CHRSZ = {
     'chr1': 248956422,
     'chr2': 242193529,
@@ -68,24 +68,29 @@ def validate(bw):
             if end == s:
                 continue
             if end-start != WINDOW_SIZE:
-                raise ValueError('Invalid window size for chr {}. '
+                raise ValueError(
+                    'Invalid window size for chr {}. '
                     'start: {}, end: {}, value: {}'.format(
                         c, start, end, v))
     log.info('Validation done.')
+    return 0
+
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(prog='ENCODE Imputation Challenge validation script.',
-                                        description='')
+    parser = argparse.ArgumentParser(prog='ENCODE Imputation Challenge'
+                                          'validation script.')
     parser.add_argument('bw', type=str,
                         help='Bigwig file to be validated.')
-    parser.add_argument('--log-level', default='INFO', 
-                        choices=['NOTSET','DEBUG','INFO','WARNING','CRITICAL','ERROR','CRITICAL'],
+    parser.add_argument('--log-level', default='INFO',
+                        choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
+                                 'CRITICAL', 'ERROR', 'CRITICAL'],
                         help='Log level')
     args = parser.parse_args()
 
     log.setLevel(args.log_level)
     log.info(sys.argv)
     return args
+
 
 def main():
     # read params
@@ -98,5 +103,6 @@ def main():
 
     return 0
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     main()
