@@ -39,3 +39,11 @@ $ pip install numpy scikit-learn pyBigWig
 	chr20	20.45688606636623	1730.3503548526915	195.52252657980728	0.01705378703206674	848	3462	2976	0.5852748736100822	0.590682173511888	376.1018309950674	31.24613030186926	94.01719916101615
 	```
 
+
+## Validation for submissions
+
+In order to validate your BIGWIG. Use `validate.py`.
+
+```bash
+$ python validate.py [YOUR_SUBMISSION_BIGWIG]
+```
