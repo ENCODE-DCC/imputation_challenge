@@ -131,7 +131,7 @@ def mseprom(y_true_dict, y_pred_dict, chroms,
         if bootstrapped_label_dict is None:
             bootstrapped_label = None
         else:
-            bootstrapped_label = bootstrapped_label_dict[chrom]
+            bootstrapped_label = set(bootstrapped_label_dict[chrom])
 
         for line in gene_annotations:
             chrom_, start, end, _, _, strand = line.split()
@@ -144,7 +144,7 @@ def mseprom(y_true_dict, y_pred_dict, chroms,
             if chrom_ != chrom:
                 continue
 
-            if bootstrapped_label is None:
+            if bootstrapped_label is None:                
                 if strand == '+':
                     sse += ((y_true[start-prom_loc: start] -
                              y_pred[start-prom_loc: start]) ** 2).sum()
@@ -164,7 +164,8 @@ def mseprom(y_true_dict, y_pred_dict, chroms,
                 for i in range(s, e):
                     if i not in bootstrapped_label:
                         continue
-                    sse += ((y_true[i] - y_pred[i]) ** 2)
+                    x = (y_true[i] - y_pred[i])
+                    sse += (x*x)
                     n += 1
 
     return sse / n
@@ -181,7 +182,7 @@ def msegene(y_true_dict, y_pred_dict, chroms,
         if bootstrapped_label_dict is None:
             bootstrapped_label = None
         else:
-            bootstrapped_label = bootstrapped_label_dict[chrom]
+            bootstrapped_label = set(bootstrapped_label_dict[chrom])
 
         for line in gene_annotations:
             chrom_, start, end, _, _, strand = line.split()
@@ -200,7 +201,8 @@ def msegene(y_true_dict, y_pred_dict, chroms,
                 for i in range(start, end):
                     if i not in bootstrapped_label:
                         continue
-                    sse += ((y_true[i] - y_pred[i]) ** 2)
+                    x = (y_true[i] - y_pred[i])
+                    sse += (x*x)
                     n += 1
 
     return sse / n
@@ -217,7 +219,7 @@ def mseenh(y_true_dict, y_pred_dict, chroms,
         if bootstrapped_label_dict is None:
             bootstrapped_label = None
         else:
-            bootstrapped_label = bootstrapped_label_dict[chrom]
+            bootstrapped_label = set(bootstrapped_label_dict[chrom])
 
         for line in enh_annotations:
             chrom_, start, end, _, _, _, _, _, _, _, _, _ = line.split()
@@ -236,7 +238,8 @@ def mseenh(y_true_dict, y_pred_dict, chroms,
                 for i in range(start, end):
                     if i not in bootstrapped_label:
                         continue
-                    sse += ((y_true[i] - y_pred[i]) ** 2)
+                    x = (y_true[i] - y_pred[i])
+                    sse += (x*x)
                     n += 1
 
     return sse / n
@@ -611,24 +614,29 @@ def main():
     with open(args.out_file, 'w') as fp:
 
         # dict: { chr: vector }
+        log.info('Converting bigwig to numpy array...')
         y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size)
         y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
 
         for k, label in enumerate(bootstrapped_labels):
-            log.info('Converting bigwig to numpy array...')
-
-            output = score(y_pred_dict, y_true_dict, args.chrom,
-                           gene_annotations, enh_annotations,
-                           args.window_size, args.prom_loc,
-                           label)
 
             if label is None:
                 bootstrap = 'no_bootstrap'
             else:
                 bootstrap = 'bootstrap-{}'.format(k+1)
+            log.info('Calculating score for {} case...'.format(bootstrap))
+
+            output = score(y_pred_dict, y_true_dict, args.chrom,
+                           gene_annotations, enh_annotations,
+                           args.window_size, args.prom_loc,
+                           label)
+            # write to TSV
             s = "\t".join([bootstrap]+[str(o) for o in output])
             fp.write(s+'\n')
             print(s)
+
+            # write to DB
+
 
     log.info('All done.')
 

@@ -60,21 +60,31 @@ def main():
     for k in range(args.fold):
         result.append(dict())
 
-    sfk = StratifiedKFold(n_splits=args.fold,
-                          shuffle=True,
-                          random_state=args.random_seed)
-    for c, chrom_len in bw.chroms().items():
-        # number of bins per chromosome
-        print(c)
-        n_bin = (chrom_len-1)//args.window_size+1
-        for bootstrap_id, (label, _) in enumerate(sfk.split(
-                                                numpy.zeros(n_bin),
-                                                numpy.zeros(n_bin))):
-            result[bootstrap_id][c] = label
-            # print(bootstrap_id, result[bootstrap_id][c][0:20])
+    if args.fold == 1:
+        for c, chrom_len in bw.chroms().items():
+            # number of bins per chromosome
+            print(c)
+            n_bin = (chrom_len-1)//args.window_size+1
+            result[0][c] = list(range(n_bin))
 
-        for k in range(args.fold):
-            print('k={}: {}'.format(k, result[k][c][0:20]))
+            for k in range(args.fold):
+                print('k={}: {}'.format(k, result[k][c][0:20]))
+    else:
+        sfk = StratifiedKFold(n_splits=args.fold,
+                              shuffle=True,
+                              random_state=args.random_seed)
+        for c, chrom_len in bw.chroms().items():
+            # number of bins per chromosome
+            print(c)
+            n_bin = (chrom_len-1)//args.window_size+1
+            for bootstrap_id, (label, _) in enumerate(sfk.split(
+                                                    numpy.zeros(n_bin),
+                                                    numpy.zeros(n_bin))):
+                result[bootstrap_id][c] = label
+                # print(bootstrap_id, result[bootstrap_id][c][0:20])
+
+            for k in range(args.fold):
+                print('k={}: {}'.format(k, result[k][c][0:20]))
 
     numpy.save(args.out_npy, result)
 
