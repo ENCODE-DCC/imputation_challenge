@@ -1,6 +1,8 @@
-# Bootrapping code
-# Author: Jin Lee
-# Contact: leepc12@gmail.com
+#!/usr/bin/env python3
+"""Imputation challenge bootstrapped label generation script
+Author:
+    Jin Lee (leepc12@gmail.com)
+"""
 
 import sys
 import numpy

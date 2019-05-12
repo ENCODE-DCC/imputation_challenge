@@ -51,7 +51,7 @@ $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 Download `submission_template.bigwig` from Synapse imputation challenge site. The following command will make 10-fold (default) bootstrapped index for each chromosome. Output is a single `.npy` file which have all bootstrapped labels for corresponding bootstrap index and chromosomes.
 
 ```bash
-$ python get_bootstrapped_index.py submission_template.bigwig
+$ python build_bootstrapped_label.py submission_template.bigwig
 ```
 
 ### How to use bootstrapped label?
