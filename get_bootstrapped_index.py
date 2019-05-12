@@ -6,10 +6,9 @@ import sys
 import numpy
 import pyBigWig
 import argparse
-import gzip
-import copy
-from sklearn.model_selection  import StratifiedKFold
 import logging
+from sklearn.model_selection import StratifiedKFold
+
 
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
@@ -19,11 +18,12 @@ log = logging.getLogger(__name__)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        prog='ENCODE Imputation Challenge bootstrapped label generator')                                          
+        prog='ENCODE Imputation Challenge bootstrapped label generator')
     parser.add_argument('submission_template_bw',
                         help='Submission template bigwig file.')
     parser.add_argument('--fold', default=10, type=int,
-                        help='Fold for bootstrapping (n_splits for StratifiedKFold)')
+                        help='Fold for bootstrapping '
+                             '(n_splits for StratifiedKFold)')
     parser.add_argument('--window-size', default=25,
                         help='Window size for bigwig in bp.')
     parser.add_argument('--random-seed', default=0,
@@ -44,7 +44,7 @@ def parse_arguments():
 def main():
     """
     Returns
-        [ 
+        [
             { chr: bootstrapped_label }, # 1st fold
             { chr: bootstrapped_label }, # 2nd fold
             ...
@@ -77,6 +77,7 @@ def main():
             print('k={}: {}'.format(k, result[k][c][0:20]))
 
     numpy.save(args.out_npy, result)
+
 
 if __name__ == '__main__':
     main()

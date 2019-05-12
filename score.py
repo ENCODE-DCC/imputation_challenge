@@ -387,7 +387,7 @@ Score = namedtuple(
 
 
 ScoreDBRecord = namedtuple(
-    'ScoreDBRecord', 
+    'ScoreDBRecord',
     ('cell', 'assay', 'team_id', 'submission_id',
      'submission_fname', 'bootstrap_id') + Score._fields)
 
@@ -403,7 +403,7 @@ def score(y_pred_dict, y_true_dict, chroms,
             { chr: label }
             Dict of labels of a bootstrapped (subsampled) sample
             For example of the full original label = [0,1,2,3] with
-            4-fold bootstrapping without shuffling.            
+            4-fold bootstrapping without shuffling.
             Bootstrapped labels are like the following:
                 [0,1,2], [0,1,3], [0,2,3], [1,2,3]
             We need to score a submission for each bootstrap index
@@ -415,27 +415,27 @@ def score(y_pred_dict, y_true_dict, chroms,
     y_true = dict_to_arr(y_true_dict, bootstrapped_label_dict)
 
     output = Score(
-        mse = mse(y_true, y_pred),
-        mse1obs = mse1obs(y_true, y_pred),
-        mse1imp = mse1imp(y_true, y_pred),
-        gwcorr = gwcorr(y_true, y_pred),
-        match1 = match1(y_true, y_pred),
-        catch1obs = catch1obs(y_true, y_pred),
-        catch1imp = catch1imp(y_true, y_pred),
-        aucobs1 = aucobs1(y_true, y_pred),
-        aucimp1 = aucimp1(y_true, y_pred),
-        mseprom = mseprom(y_true_dict, y_pred_dict, chroms,
-                          gene_annotations,
-                          window_size, prom_loc,
-                          bootstrapped_label_dict),
-        msegene = msegene(y_true_dict, y_pred_dict, chroms,
-                          gene_annotations,
-                          window_size,
-                          bootstrapped_label_dict),
-        mseenh = mseenh(y_true_dict, y_pred_dict, chroms,
-                          enh_annotations,
-                          window_size,
-                          bootstrapped_label_dict),
+        mse=mse(y_true, y_pred),
+        mse1obs=mse1obs(y_true, y_pred),
+        mse1imp=mse1imp(y_true, y_pred),
+        gwcorr=gwcorr(y_true, y_pred),
+        match1=match1(y_true, y_pred),
+        catch1obs=catch1obs(y_true, y_pred),
+        catch1imp=catch1imp(y_true, y_pred),
+        aucobs1=aucobs1(y_true, y_pred),
+        aucimp1=aucimp1(y_true, y_pred),
+        mseprom=mseprom(y_true_dict, y_pred_dict, chroms,
+                        gene_annotations,
+                        window_size, prom_loc,
+                        bootstrapped_label_dict),
+        msegene=msegene(y_true_dict, y_pred_dict, chroms,
+                        gene_annotations,
+                        window_size,
+                        bootstrapped_label_dict),
+        mseenh=mseenh(y_true_dict, y_pred_dict, chroms,
+                      enh_annotations,
+                      window_size,
+                      bootstrapped_label_dict),
     )
     return output
 
@@ -487,13 +487,17 @@ def parse_arguments():
                         help='Truth bigwig file.')
     p_score = parser.add_argument_group(
                         title='Scoring parameters')
-    p_score.add_argument('--chrom', nargs='+', required=True, default=['all'],
-                         help='List of chromosomes to be combined to be scored. '
-                              'Set as "all" (default) to score for all chromosomes. '
+    p_score.add_argument('--chrom', nargs='+', required=True,
+                         default=['all'],
+                         help='List of chromosomes to be combined to be '
+                              'scored. '
+                              'Set as "all" (default) to score for all '
+                              'chromosomes. '
                               '(e.g. "all" or "chr3 chr21") '
                               'It should be "all" to write scores to DB file.')
     p_score.add_argument('--bootstrapped-label-npy',
-                         help='Bootstrapped label data .npy file. If given, all folds '
+                         help='Bootstrapped label data .npy file. If given, '
+                              'all folds '
                               'of bootstrapped samples will be scored')
     p_score.add_argument('--gene-annotations',
                          default=os.path.join(
@@ -509,7 +513,7 @@ def parse_arguments():
                          help='Window size for bigwig in bp.')
     p_score.add_argument('--prom-loc', default=80, type=int,
                          help='Promoter location in a unit of window size '
-                             '(--window-size). This is not in bp.')
+                              '(--window-size). This is not in bp.')
     p_out = parser.add_argument_group(
                         title='Output to file (TSV or DB)')
     p_out.add_argument('--out-file', default='output.tsv',
@@ -517,8 +521,8 @@ def parse_arguments():
     p_out.add_argument('--out-db-file',
                        help='Write metadata/scores to SQLite DB file')
     p_meta = parser.add_argument_group(
-                        title='Submission metadata, which will be written to DB '
-                              'together with scores. This will be used for '
+                        title='Submission metadata, which will be written to '
+                              'DB together with scores. This will be used for '
                               'ranking later')
     p_meta.add_argument('--cell', '-c',
                         help='Cell type. e.g. C01')
@@ -534,7 +538,7 @@ def parse_arguments():
                         help='Log level')
     args = parser.parse_args()
 
-    # some submission files have whitespace in path...    
+    # some submission files have whitespace in path...
     if args.bw_pred is not None:
         args.bw_pred = args.bw_pred.strip("'")
     if args.bw_true is not None:
@@ -543,22 +547,27 @@ def parse_arguments():
         args.out_file = args.out_file.strip("'")
 
     if args.out_db_file is not None:
-        raise NotImplemented('NO DB SUPPORT YET')
+        raise NotImplementedError('NO DB SUPPORT YET')
 
         args.out_db_file = args.out_db_file.strip("'")
         if args.chrom != ['all']:
-            raise ValueError('Define "--chrom all" to write scores to DB file.')
+            raise ValueError(
+                'Define "--chrom all" to write scores to DB file.')
         if args.cell is None:
-            raise ValueError('Define "--cell CXX" to write scores to DB file.')
+            raise ValueError(
+                'Define "--cell CXX" to write scores to DB file.')
         if args.mark is None:
-            raise ValueError('Define "--mark MXX" to write scores to DB file.')
+            raise ValueError(
+                'Define "--mark MXX" to write scores to DB file.')
         if args.team_id is None:
-            raise ValueError('Define "--team-id" to write scores to DB file.')
+            raise ValueError(
+                'Define "--team-id" to write scores to DB file.')
         if args.submission_id is None:
-            raise ValueError('Define "--submission-id" to write scores to DB file.')
+            raise ValueError(
+                'Define "--submission-id" to write scores to DB file.')
 
     if args.chrom == ['all']:
-        args.chrom = ['chr'+str(i) for i in range(1,23)]+['chrX']
+        args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
 
     log.setLevel(args.log_level)
     log.info(sys.argv)
@@ -641,5 +650,5 @@ def write_to_db():
             break
     else:
         with connection:
-            connection.execute(sql)      
+            connection.execute(sql)
 """
