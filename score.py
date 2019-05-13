@@ -472,7 +472,7 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False, logger=None):
             start = step*window_size
             end = min((step+1)*window_size, chrom_len)
             if validated:
-                result_per_chr.append(all_steps[step])
+                result_per_chr.append(all_steps[step][2])
             else:
                 stat = bw.stats(c, start, end, exact=True)
                 if stat[0] is None:
@@ -568,6 +568,13 @@ def parse_arguments():
     p_score.add_argument('--prom-loc', default=80, type=int,
                          help='Promoter location in a unit of window size '
                               '(--window-size). This is not in bp')
+    p_score.add_argument('--validated', action='store_true',
+                         help='For validated submissions (not for truth bigwigs)'
+                              'with fixed interval length of 25 and valid '
+                              'chromosome lengths. It will skip interpolation. '
+                              'For truth bigwigs, it is recommended to convert '
+                              'them into npy\'s or npz\'s by using '
+                              'build_npy_from_bigwig.py')
     p_out = parser.add_argument_group(
                         title='Output to file (TSV or DB)')
     p_out.add_argument('--out-file', default='output.tsv',
