@@ -111,8 +111,8 @@ def calc_global_ranks(rows):
             obs_users = set(x[0] for x in ranks.keys())
             for (team_id, submission_id), rank in ranks.items():
                 # print team_id, rank
-                # user_ranks[(team_id, submission_id)].append(rank)
-                user_ranks[(team_id, 0)].append(rank)
+                user_ranks[(team_id, submission_id)].append(rank)
+                # user_ranks[(team_id, 0)].append(rank)
                 global_scores[index][team_id].append(
                     min(0.5, rank/(len(ranks)+1))
                 )            
