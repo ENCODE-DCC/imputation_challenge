@@ -12,7 +12,7 @@ $ pip install numpy scikit-learn pyBigWig
 
 2) Install `numpy`, `scikit-learn` and `pyBigWig`.
 	```bash
-	$ conda install -c bioconda numpy scikit-learn pyBigWig 
+	$ conda install -c bioconda numpy scikit-learn pyBigWig sqlite scipy
 	```
 
 ## Example (hg38)
