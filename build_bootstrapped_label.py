@@ -30,8 +30,8 @@ def parse_arguments():
                         help='Window size for bigwig in bp.')
     parser.add_argument('--random-seed', default=0,
                         help='Random seed (random_state for StratifiedKFold)')
-    parser.add_argument('--out-npy', default='bootstrapped_label',
-                        help='Write bootstrapped label to .npy file.')
+    parser.add_argument('--out-npy-prefix', default='bootstrapped_label',
+                        help='Write bootstrapped label to .npy or .npz file.')
     parser.add_argument('--log-level', default='INFO',
                         choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
                                  'CRITICAL', 'ERROR', 'CRITICAL'],
@@ -88,7 +88,7 @@ def main():
             for k in range(args.fold):
                 print('k={}: {}'.format(k, result[k][c][0:20]))
 
-    numpy.save(args.out_npy, result)
+    numpy.save(args.out_npy_prefix, result)
 
 
 if __name__ == '__main__':

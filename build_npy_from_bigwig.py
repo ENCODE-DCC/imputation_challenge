@@ -21,9 +21,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         prog='ENCODE Imputation Challenge scoring script')
     parser.add_argument('bw',
-                        help='Bigwig file to be converted to .npy')
+                        help='Bigwig file to be converted to .npy or .npz')
     parser.add_argument('--out-npy-prefix', required=True,
-                         help='Output npy prefix')
+                         help='Output prefix for .npy or .npz')
     p_score = parser.add_argument_group(
                         title='Scoring parameters')
     p_score.add_argument('--chrom', nargs='+',
@@ -60,7 +60,7 @@ def main():
     bw = pyBigWig.open(args.bw)
     y_dict = bw_to_dict(bw, args.chrom, args.window_size, log)
 
-    log.info('Writing to npy...')
+    log.info('Writing to npy or npz...')
     numpy.save(args.out_npy_prefix, y_dict)
 
     log.info('All done')

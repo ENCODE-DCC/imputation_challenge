@@ -526,9 +526,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         prog='ENCODE Imputation Challenge scoring script')
     parser.add_argument('file_pred',
-                        help='Submission bigwig (or .npy) file to be scored')
+                        help='Submission bigwig (or .npy .npz) file to be scored')
     parser.add_argument('file_true',
-                        help='Truth bigwig (or .npy) file')
+                        help='Truth bigwig (or .npy .npz) file')
     p_score = parser.add_argument_group(
                         title='Scoring parameters')
     p_score.add_argument('--chrom', nargs='+',
@@ -635,7 +635,7 @@ def main():
     # read params
     args = parse_arguments()
 
-    if args.file_pred.endswith('.npy'):
+    if args.file_pred.endswith(('.npy', '.npz')):
         log.info('Opening prediction numpy array file...')
         y_pred_dict = numpy.load(args.file_pred, allow_pickle=True)[()]
     elif args.file_pred.lower().endswith(('.bw','.bigwig')):
@@ -645,7 +645,7 @@ def main():
     else:
         raise NotImplementedError('Unsupported file type')
 
-    if args.file_true.endswith('.npy'):
+    if args.file_true.endswith(('.npy', '.npz')):
         log.info('Opening truth numpy array file...')
         y_true_dict = numpy.load(args.file_true, allow_pickle=True)[()]
     elif args.file_true.lower().endswith(('.bw','.bigwig')):
