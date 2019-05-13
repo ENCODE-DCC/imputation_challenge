@@ -35,7 +35,7 @@ ScoreDBRecord = namedtuple(
      'bootstrap_id', 'chroms') + Score._fields)
 
 DB_TABLE_SCORE = 'score'
-DB_QUERY_INSERT = 'INSERT INTO {table_name} ({cols}) VALUES ({values});'
+DB_QUERY_INSERT = 'INSERT INTO {table} ({cols}) VALUES ({values});'
 
 
 def mse(y_true, y_pred):
@@ -500,7 +500,7 @@ def write_to_db(score_db_record, db_file):
         values.append(val)
 
     query = DB_QUERY_INSERT.format(
-        table_name=DB_TABLE_SCORE, cols=','.join(cols), values=','.join(values))
+        table=DB_TABLE_SCORE, cols=','.join(cols), values=','.join(values))
     log.info('SQL query: {}'.format(query))
     while True:
         try:
@@ -675,7 +675,7 @@ def main():
                 bootstrap = 'no_bootstrap'
                 bootstrap_id = -1
             else:
-                bootstrap = 'bootstrap-{}'.format(k+1)
+                bootstrap = 'bootstrap-{}'.format(k)
                 bootstrap_id = k
             log.info('Calculating score for {} case...'.format(bootstrap))
 
@@ -691,13 +691,13 @@ def main():
             # write to DB
             if args.out_db_file is not None:
                 score_db_record = ScoreDBRecord(
-                    args.submission_id,  # submission_id=
-                    args.team_id,  # team_id=
-                    os.path.basename(args.file_pred),  # submission_fname=
-                    args.cell,  # cell=
-                    args.assay,  # assay=
-                    bootstrap_id,  # bootstrap_id=
-                    ','.join(sorted(args.chrom)),  # chroms=
+                    args.submission_id,
+                    args.team_id,
+                    os.path.basename(args.file_pred),
+                    args.cell,
+                    args.assay,
+                    bootstrap_id,
+                    ','.join(sorted(args.chrom)),
                     *score_output)
                 write_to_db(score_db_record, args.out_db_file)
 
