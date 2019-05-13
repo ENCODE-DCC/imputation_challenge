@@ -58,7 +58,7 @@ def main():
 
     log.info('Opening bigwig file...')
     bw = pyBigWig.open(args.bw)
-    y_dict = bw_to_dict(bw, args.chrom, args.window_size)
+    y_dict = bw_to_dict(bw, args.chrom, args.window_size, log)
 
     log.info('Writing to npy...')
     numpy.save(args.out_npy_prefix, y_dict)

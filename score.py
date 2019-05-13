@@ -448,14 +448,18 @@ def score(y_pred_dict, y_true_dict, chroms,
     return output
 
 
-def bw_to_dict(bw, chrs, window_size=25):
+def bw_to_dict(bw, chrs, window_size=25, logger=None):
     """
     Returns:
         { chr: [] } where [] is a numpy 1-dim array
     """
     result = {}
     for c in chrs:
-        log.info('Reading chromosome {} from bigwig...'.format(c))
+        log_msg = 'Reading chromosome {} from bigwig...'.format(c)
+        if logger is None:
+            log.info(log_msg)
+        else:
+            logger.info(log_msg)
         result_per_chr = []
         chrom_len = bw.chroms()[c]
         for step in range((chrom_len-1)//window_size+1):
