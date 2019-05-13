@@ -448,7 +448,7 @@ def score(y_pred_dict, y_true_dict, chroms,
     return output
 
 
-def bw_to_dict(bw, chrs, window_size=25, logger=None):
+def bw_to_dict(bw, chrs, window_size=25, validated=False, logger=None):
     """
     Returns:
         { chr: [] } where [] is a numpy 1-dim array
@@ -462,14 +462,24 @@ def bw_to_dict(bw, chrs, window_size=25, logger=None):
             logger.info(log_msg)
         result_per_chr = []
         chrom_len = bw.chroms()[c]
-        for step in range((chrom_len-1)//window_size+1):
+
+        num_step = (chrom_len-1)//window_size+1
+        if validated:
+            all_steps = bw.intervals(c)
+            assert(num_step==len(all_steps))
+
+        for step in range(num_step):
             start = step*window_size
             end = min((step+1)*window_size, chrom_len)
-            stat = bw.stats(c, start, end, exact=True)
-            if stat[0] is None:
-                result_per_chr.append(0)
+            if validated:
+                result_per_chr.append(all_steps[step])
             else:
-                result_per_chr.append(stat[0])
+                stat = bw.stats(c, start, end, exact=True)
+                if stat[0] is None:
+                    result_per_chr.append(0)
+                else:
+                    result_per_chr.append(stat[0])
+
         result[c] = numpy.array(result_per_chr)
     return result
 
@@ -641,7 +651,8 @@ def main():
     elif args.file_pred.lower().endswith(('.bw','.bigwig')):
         log.info('Opening prediction bigwig file...')
         bw_pred = pyBigWig.open(args.file_pred)
-        y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size)
+        y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size,
+            args.validated)
     else:
         raise NotImplementedError('Unsupported file type')
 
@@ -651,7 +662,8 @@ def main():
     elif args.file_true.lower().endswith(('.bw','.bigwig')):
         log.info('Opening truth bigwig file...')
         bw_true = pyBigWig.open(args.file_true)
-        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
+        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size,
+            args.validated)
     else:
         raise NotImplementedError('Unsupported file type')
 

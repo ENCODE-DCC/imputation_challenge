@@ -36,6 +36,10 @@ def parse_arguments():
                               'It should be "all" to write scores to DB file')
     p_score.add_argument('--window-size', default=25, type=int,
                          help='Window size for bigwig in bp')
+    p_score.add_argument('--validated', action='store_true',
+                         help='For validated submissions and truth bigwig '
+                              'with fixed interval length of 25 and valid '
+                              'chromosome lengths. It will skip interpolation')
     parser.add_argument('--log-level', default='INFO',
                         choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
                                  'CRITICAL', 'ERROR', 'CRITICAL'],
@@ -58,7 +62,7 @@ def main():
 
     log.info('Opening bigwig file...')
     bw = pyBigWig.open(args.bw)
-    y_dict = bw_to_dict(bw, args.chrom, args.window_size, log)
+    y_dict = bw_to_dict(bw, args.chrom, args.window_size, args.validated, log)
 
     log.info('Writing to npy or npz...')
     numpy.save(args.out_npy_prefix, y_dict)
