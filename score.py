@@ -1,12 +1,17 @@
-# Imputed track evaluations
-# Author: Jacob Schreiber, Jin Lee
-# Contact: jmschreiber91@gmail.com, leepc12@gmail.com
+#!/usr/bin/env python3
+"""Imputation challenge scoring script
+Author:
+    Jin Lee (leepc12@gmail.com) and Jacob Schreiber (jmschreiber91@gmail.com)
+"""
 
 import sys
 import argparse
 import numpy
 import pyBigWig
+import os
 import gzip
+import sqlite3
+import time
 from collections import namedtuple
 from sklearn.metrics import roc_auc_score
 from scipy.stats import norm
@@ -17,7 +22,20 @@ logging.basicConfig(
     stream=sys.stdout)
 log = logging.getLogger(__name__)
 
-BIG_INT = 99999999
+
+Score = namedtuple(
+    'Score',
+    ('mse', 'mse1obs', 'mse1imp', 'gwcorr', 'match1',
+     'catch1obs', 'catch1imp', 'aucobs1', 'aucimp1',
+     'mseprom', 'msegene', 'mseenh'))
+
+ScoreDBRecord = namedtuple(
+    'ScoreDBRecord',
+    ('submission_id', 'team_id', 'submission_fname', 'cell', 'assay',
+     'bootstrap_id', 'chroms') + Score._fields)
+
+DB_TABLE_SCORE = 'score'
+DB_QUERY_INSERT = 'INSERT INTO {table_name} ({cols}) VALUES ({values});'
 
 
 def mse(y_true, y_pred):
@@ -382,19 +400,6 @@ def mseDiff(y_true, y_pred):
     return ((numpy.diff(y_true) - numpy.diff(y_pred)) ** 2).mean()
 
 
-Score = namedtuple(
-    'Score',
-    ('mse', 'mse1obs', 'mse1imp', 'gwcorr', 'match1',
-     'catch1obs', 'catch1imp', 'aucobs1', 'aucimp1',
-     'mseprom', 'msegene', 'mseenh'))
-
-
-ScoreDBRecord = namedtuple(
-    'ScoreDBRecord',
-    ('cell', 'assay', 'team_id', 'submission_id',
-     'submission_fname', 'bootstrap_id') + Score._fields)
-
-
 def score(y_pred_dict, y_true_dict, chroms,
           gene_annotations, enh_annotations,
           window_size=25, prom_loc=80,
@@ -450,13 +455,13 @@ def bw_to_dict(bw, chrs, window_size=25):
     """
     result = {}
     for c in chrs:
+        log.info('Reading chromosome {} from bigwig...'.format(c))
         result_per_chr = []
         chrom_len = bw.chroms()[c]
         for step in range((chrom_len-1)//window_size+1):
             start = step*window_size
             end = min((step+1)*window_size, chrom_len)
             stat = bw.stats(c, start, end, exact=True)
-            # print(start,end,stat)
             if stat[0] is None:
                 result_per_chr.append(0)
             else:
@@ -478,26 +483,58 @@ def dict_to_arr(d, bootstrapped_label_dict=None):
     return numpy.array(result)
 
 
+def write_to_db(score_db_record, db_file):
+    cols = []
+    values = []
+    for attr in score_db_record._fields:
+        cols.append(str(attr))
+        val = getattr(score_db_record, attr)
+        if isinstance(val, str):
+            val = '"' + val + '"'
+        else:
+            val = str(val)
+        values.append(val)
+
+    query = DB_QUERY_INSERT.format(
+        table_name=DB_TABLE_SCORE, cols=','.join(cols), values=','.join(values))
+    log.info('SQL query: {}'.format(query))
+    while True:
+        try:
+            conn = sqlite3.connect(db_file)
+            c = conn.cursor()
+            c.execute(query)
+            c.close()
+            conn.commit()
+            conn.close()
+        except sqlite3.OperationalError as e:
+            print(e)
+            conn.close()
+            time.sleep(1)
+            continue
+        else:
+            break    
+
+
 def parse_arguments():
     import os
     py_path = os.path.dirname(os.path.realpath(__file__))
 
     parser = argparse.ArgumentParser(
-        prog='ENCODE Imputation Challenge scoring script.')
-    parser.add_argument('bw_pred',
-                        help='Submission bigwig file to be scored.')
-    parser.add_argument('bw_true',
-                        help='Truth bigwig file.')
+        prog='ENCODE Imputation Challenge scoring script')
+    parser.add_argument('file_pred',
+                        help='Submission bigwig (or .npy) file to be scored')
+    parser.add_argument('file_true',
+                        help='Truth bigwig (or .npy) file')
     p_score = parser.add_argument_group(
                         title='Scoring parameters')
-    p_score.add_argument('--chrom', nargs='+', required=True,
+    p_score.add_argument('--chrom', nargs='+',
                          default=['all'],
                          help='List of chromosomes to be combined to be '
                               'scored. '
                               'Set as "all" (default) to score for all '
                               'chromosomes. '
                               '(e.g. "all" or "chr3 chr21") '
-                              'It should be "all" to write scores to DB file.')
+                              'It should be "all" to write scores to DB file')
     p_score.add_argument('--bootstrapped-label-npy',
                          help='Bootstrapped label data .npy file. If given, '
                               'all folds '
@@ -513,10 +550,10 @@ def parse_arguments():
                             'annot/hg38/F5.hg38.enhancers.bed.gz'),
                          help='Enhancer annotations BED file ')
     p_score.add_argument('--window-size', default=25, type=int,
-                         help='Window size for bigwig in bp.')
+                         help='Window size for bigwig in bp')
     p_score.add_argument('--prom-loc', default=80, type=int,
                          help='Promoter location in a unit of window size '
-                              '(--window-size). This is not in bp.')
+                              '(--window-size). This is not in bp')
     p_out = parser.add_argument_group(
                         title='Output to file (TSV or DB)')
     p_out.add_argument('--out-file', default='output.tsv',
@@ -529,7 +566,7 @@ def parse_arguments():
                               'ranking later')
     p_meta.add_argument('--cell', '-c',
                         help='Cell type. e.g. C01')
-    p_meta.add_argument('--mark', '-m',
+    p_meta.add_argument('--assay', '-a',
                         help='Assay or histone mark. e.g. M01')
     p_meta.add_argument('--team-id', '-t', type=int,
                         help='Team ID (unique ID from Synapse)')
@@ -542,32 +579,32 @@ def parse_arguments():
     args = parser.parse_args()
 
     # some submission files have whitespace in path...
-    if args.bw_pred is not None:
-        args.bw_pred = args.bw_pred.strip("'")
-    if args.bw_true is not None:
-        args.bw_true = args.bw_true.strip("'")
+    if args.file_pred is not None:
+        args.file_pred = args.file_pred.strip("'")
+    if args.file_true is not None:
+        args.file_true = args.file_true.strip("'")
     if args.out_file is not None:
         args.out_file = args.out_file.strip("'")
 
     if args.out_db_file is not None:
-        raise NotImplementedError('NO DB SUPPORT YET')
-
         args.out_db_file = args.out_db_file.strip("'")
-        if args.chrom != ['all']:
-            raise ValueError(
-                'Define "--chrom all" to write scores to DB file.')
+        if not os.path.exists(args.out_db_file):
+            raise ValueError('DB file does not exists')
+        # if args.chrom != ['all']:
+        #     raise ValueError(
+        #         'Define "--chrom all" to write scores to DB file')
         if args.cell is None:
             raise ValueError(
-                'Define "--cell CXX" to write scores to DB file.')
-        if args.mark is None:
+                'Define "--cell CXX" to write scores to DB file')
+        if args.assay is None:
             raise ValueError(
-                'Define "--mark MXX" to write scores to DB file.')
+                'Define "--assay MXX" to write scores to DB file')
         if args.team_id is None:
             raise ValueError(
-                'Define "--team-id" to write scores to DB file.')
+                'Define "--team-id" to write scores to DB file')
         if args.submission_id is None:
             raise ValueError(
-                'Define "--submission-id" to write scores to DB file.')
+                'Define "--submission-id" to write scores to DB file')
 
     if args.chrom == ['all']:
         args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
@@ -594,9 +631,25 @@ def main():
     # read params
     args = parse_arguments()
 
-    log.info('Opening bigwig files...')
-    bw_true = pyBigWig.open(args.bw_true.strip("'"))
-    bw_pred = pyBigWig.open(args.bw_pred.strip("'"))
+    if args.file_pred.endswith('.npy'):
+        log.info('Opening prediction numpy array file...')
+        y_pred_dict = numpy.load(args.file_pred, allow_pickle=True)[()]
+    elif args.file_pred.lower().endswith(('.bw','.bigwig')):
+        log.info('Opening prediction bigwig file...')
+        bw_pred = pyBigWig.open(args.file_pred)
+        y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size)
+    else:
+        raise NotImplementedError('Unsupported file type')
+
+    if args.file_true.endswith('.npy'):
+        log.info('Opening truth numpy array file...')
+        y_true_dict = numpy.load(args.file_true, allow_pickle=True)[()]
+    elif args.file_true.lower().endswith(('.bw','.bigwig')):
+        log.info('Opening truth bigwig file...')
+        bw_true = pyBigWig.open(args.file_true)
+        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
+    else:
+        raise NotImplementedError('Unsupported file type')
 
     log.info('Reading from enh_annotations...')
     enh_annotations = read_annotation_bed(args.enh_annotations)
@@ -612,51 +665,41 @@ def main():
         bootstrapped_labels = [None]
 
     with open(args.out_file, 'w') as fp:
-
-        # dict: { chr: vector }
-        log.info('Converting bigwig to numpy array...')
-        y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size)
-        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
-
         for k, label in enumerate(bootstrapped_labels):
 
             if label is None:
                 bootstrap = 'no_bootstrap'
+                bootstrap_id = -1
             else:
                 bootstrap = 'bootstrap-{}'.format(k+1)
+                bootstrap_id = k
             log.info('Calculating score for {} case...'.format(bootstrap))
 
-            output = score(y_pred_dict, y_true_dict, args.chrom,
+            score_output = score(y_pred_dict, y_true_dict, args.chrom,
                            gene_annotations, enh_annotations,
                            args.window_size, args.prom_loc,
                            label)
             # write to TSV
-            s = "\t".join([bootstrap]+[str(o) for o in output])
+            s = "\t".join([bootstrap]+[str(o) for o in score_output])
             fp.write(s+'\n')
             print(s)
 
             # write to DB
+            if args.out_db_file is not None:
+                score_db_record = ScoreDBRecord(
+                    args.submission_id,  # submission_id=
+                    args.team_id,  # team_id=
+                    os.path.basename(args.file_pred),  # submission_fname=
+                    args.cell,  # cell=
+                    args.assay,  # assay=
+                    bootstrap_id,  # bootstrap_id=
+                    ','.join(sorted(args.chrom)),  # chroms=
+                    *score_output)
+                write_to_db(score_db_record, args.out_db_file)
 
-
-    log.info('All done.')
+    log.info('All done')
 
 
 if __name__ == '__main__':
     main()
 
-"""DEV NOTE:
-
-def write_to_db():
-    for x in range(0, timeout):
-        try:
-            with connection:
-            connection.execute(sql)
-        except:
-            time.sleep(1)
-            pass
-        finally:
-            break
-    else:
-        with connection:
-            connection.execute(sql)
-"""
