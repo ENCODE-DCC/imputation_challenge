@@ -54,6 +54,7 @@ def read_scores_from_db(db_file, chroms):
     """
     valid_chrs_str = ','.join(sorted(chroms))
     query = DB_QUERY_GET.format(table=DB_TABLE_SCORE, chroms=valid_chrs_str)
+    log.info(query)
 
     while True:
         try:
@@ -71,7 +72,6 @@ def read_scores_from_db(db_file, chroms):
             continue
         else:
             break
-    
     return result
 
 
@@ -99,7 +99,7 @@ def calc_global_ranks(rows):
         sample_key = (x.cell, x.assay)
         sample_grpd_results[(x.cell, x.assay)][x.bootstrap_id].append(x)
         all_users.add(x.team_id)
-    
+
     # group all submissions by cell and assay
     rv = {}
     global_scores = defaultdict(lambda: defaultdict(list))
@@ -138,23 +138,23 @@ def calc_global_ranks(rows):
     for team_id, scores in sorted(
             user_grpd_global_scores.items(), key=lambda x: sum(x[1])):
         global_data.append(GlobalScore(*[
-            team_id, get_name(team_id), 
+            team_id, get_team_name(team_id), 
             min(scores), sum(scores)/len(scores), max(scores), 
             sorted(user_grpd_global_ranks[team_id])[1]
         ]))
     global_data = sorted(global_data, key=lambda x: (x.rank, x.score_mean))
 
-    # print('\t'.join(('name', 'rank', 'lb', 'mean', 'ub')))
-    # for x in global_data: 
-    #     print('%s\t%.2f\t%.2f\t%.2f\t%.2f' % (
-    #           x.name, x.rank, x.score_lb, x.score_mean, x.score_ub))
-    # print('# Overall Results')
-    # print(' | '.join(
-    #      ('Team name', 'rank', 'Lower bound', 'Mean', 'Upperbound')))
-    # print('|'.join(('---',)*6))
-    # for x in global_data: 
-    #     print('%s | %.2f | %.2f | %.2f | %.2f' % (
-    #         x.name, x.rank, x.score_lb, x.score_mean, x.score_ub))
+    print('\t'.join(('name', 'rank', 'lb', 'mean', 'ub')))
+    for x in global_data: 
+        print('%s\t%.2f\t%.2f\t%.2f\t%.2f' % (
+              x.name, x.rank, x.score_lb, x.score_mean, x.score_ub))
+    print('# Overall Results')
+    print(' | '.join(
+         ('Team name', 'rank', 'Lower bound', 'Mean', 'Upperbound')))
+    print('|'.join(('---',)*6))
+    for x in global_data: 
+        print('%s | %.2f | %.2f | %.2f | %.2f' % (
+            x.name, x.rank, x.score_lb, x.score_mean, x.score_ub))
 
     return rv, global_data
 
