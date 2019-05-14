@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 
 SCORE_DB_RECORD_VAR_TYPE = score.ScoreDBRecord(    
-    submission_id='integer PRIMARY KEY',
+    submission_id='integer NOT NULL',
     team_id='integer NOT NULL',
     submission_fname='text NOT NULL',
     cell='text NOT NULL',
@@ -72,7 +72,7 @@ def main():
         conn = sqlite3.connect(args.db_file)
         c = conn.cursor()
         c.execute('CREATE TABLE IF NOT EXISTS {} ({});'.format(
-            score.DB_SCORE_TABLE_NAME,
+            score.DB_TABLE_SCORE,
             ','.join([attr + ' ' + getattr(SCORE_DB_RECORD_VAR_TYPE, attr)
                         for attr in SCORE_DB_RECORD_VAR_TYPE._fields])))
     except Exception as e:
