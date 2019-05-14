@@ -116,7 +116,7 @@ def main():
     args = parse_arguments()
 
     log.info('Opening bigwig file...')
-    bw = pyBigWig.open(args.bw)
+    bw = pyBigWig.open(args.bw.strip("'"))
 
     return validate(bw)
 
