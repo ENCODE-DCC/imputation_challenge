@@ -419,8 +419,8 @@ def score(y_pred_dict, y_true_dict, chroms,
             random seed.
     """
     # concat all chromosomes
-    y_pred = dict_to_arr(y_pred_dict, bootstrapped_label_dict)
-    y_true = dict_to_arr(y_true_dict, bootstrapped_label_dict)
+    y_pred = dict_to_arr(y_pred_dict, chroms, bootstrapped_label_dict)
+    y_true = dict_to_arr(y_true_dict, chroms, bootstrapped_label_dict)
 
     output = Score(
         mse=mse(y_true, y_pred),
@@ -484,11 +484,11 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False, logger=None):
     return result
 
 
-def dict_to_arr(d, bootstrapped_label_dict=None):
+def dict_to_arr(d, chroms, bootstrapped_label_dict=None):
     """Concat vectors in d
     """
     result = []
-    for c in d:
+    for c in chroms:
         if bootstrapped_label_dict is None:
             result.extend(d[c])
         else:
@@ -629,6 +629,7 @@ def parse_arguments():
 
     if args.chrom == ['all']:
         args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
+    args.chrom = sorted(args.chrom)
 
     log.setLevel(args.log_level)
     log.info(sys.argv)
@@ -669,8 +670,7 @@ def main():
     elif args.file_true.lower().endswith(('.bw','.bigwig')):
         log.info('Opening truth bigwig file...')
         bw_true = pyBigWig.open(args.file_true)
-        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size,
-            args.validated)
+        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
     else:
         raise NotImplementedError('Unsupported file type')
 
