@@ -58,18 +58,21 @@ $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 	$ python create_db.py [SCORE_DB_FILE]
 	```
 
-4) Score each submission with bootstrap labels.
+4) Score each submission with bootstrap labels. `--validated` is only for validated submissions binned at `25`. With this flag turned on, `score.py` will skip interpolation of intervals in a bigwig. For ranking, you need to define all metadata for a submission like `--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] -t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]`. These values will be written to a database file together with bootstrap scores.
 	```bash
 	$ python score.py [YOUR_VALIDATED_SUBMISSION] [TRUTH_NPY] \
-	    --bootstrapped-label-npy [BOOTSTRAP_LABEL_NPY]
-		--out-db-file [SCORE_DB_FILE]
+	    --bootstrapped-label-npy [BOOTSTRAP_LABEL_NPY] \
+		--out-db-file [SCORE_DB_FILE] \
+		--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] \
+		-t [TEAM_ID_INT] -s [SUBMISSION_ID_INT] \
+		--validated
 	```
 
 5) Calculate ranks based on DB file
 	```bash
 	$ python rank.py [SCORE_DB_FILE]
 	```
-	
+
 
 ## For challenge admins
 
