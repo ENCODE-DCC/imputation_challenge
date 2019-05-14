@@ -27,7 +27,7 @@ $ pip install numpy scikit-learn pyBigWig
 2) Run it.
 	```bash
 	$ python score.py test/hg38/ENCFF622DXZ.bigWig test/hg38/ENCFF074VQD.bigWig \
-		--chrom chr20 --out test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
+		--chrom chr20 --out-file test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
 	```
 
 3) Output looks like: (header: bootstrap_index, mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1, mseprom, msegene, mseenh).
@@ -44,11 +44,41 @@ In order to validate your BIGWIG. Use `validate.py`.
 $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 ```
 
+## Ranking for submissions
+
+1) [Generate bootstrap label](#how-to-generate-bootstrap-labels)
+
+2) In order to speed up scoring, convert `TRUTH_BIGWIG` into numpy array/object.
+	```bash
+	$ python build_npy_from_bigwig.py [TRUTH_BIGWIG] --out-npy-prefix [TRUTH_NPY_PREFIX]
+	```
+
+3) Create a score database.
+	```bash
+	$ python create_db.py [SCORE_DB_FILE]
+	```
+
+4) Score each submission with bootstrap labels. `--validated` is only for validated submissions binned at `25`. With this flag turned on, `score.py` will skip interpolation of intervals in a bigwig. For ranking, you need to define all metadata for a submission like `--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] -t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]`. These values will be written to a database file together with bootstrap scores.
+	```bash
+	$ python score.py [YOUR_VALIDATED_SUBMISSION] [TRUTH_NPY] \
+	    --bootstrapped-label-npy [BOOTSTRAP_LABEL_NPY] \
+		--out-db-file [SCORE_DB_FILE] \
+		--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] \
+		-t [TEAM_ID_INT] -s [SUBMISSION_ID_INT] \
+		--validated
+	```
+
+5) Calculate ranks based on DB file
+	```bash
+	$ python rank.py [SCORE_DB_FILE]
+	```
+
+
 ## For challenge admins
 
-### How to generate bootstrapped labels?
+### How to generate bootstrap labels?
 
-Download `submission_template.bigwig` from Synapse imputation challenge site. The following command will make 10-fold (default) bootstrapped index for each chromosome. Output is a single `.npy` file which have all bootstrapped labels for corresponding bootstrap index and chromosomes.
+Download `submission_template.bigwig` from Synapse imputation challenge site. The following command will make 10-fold (default) bootstrap index for each chromosome. Output is a single `.npy` file which have all bootstrap labels for corresponding bootstrap index and chromosomes.
 
 ```bash
 $ python build_bootstrapped_label.py submission_template.bigwig
@@ -57,3 +87,4 @@ $ python build_bootstrapped_label.py submission_template.bigwig
 ### How to use bootstrapped label?
 
 Simply run `score.py` with `--bootstrapped-label-npy bootstrapped_label.npy`.
+
