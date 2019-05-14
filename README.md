@@ -12,7 +12,7 @@ $ pip install numpy scikit-learn pyBigWig
 
 2) Install `numpy`, `scikit-learn` and `pyBigWig`.
 	```bash
-	$ conda install -c bioconda numpy scikit-learn pyBigWig 
+	$ conda install -c bioconda numpy scikit-learn pyBigWig sqlite scipy
 	```
 
 ## Example (hg38)
@@ -27,16 +27,12 @@ $ pip install numpy scikit-learn pyBigWig
 2) Run it.
 	```bash
 	$ python score.py test/hg38/ENCFF622DXZ.bigWig test/hg38/ENCFF074VQD.bigWig \
-		--gene-annotations annot/hg38/gencode.v29.genes.gtf.bed.gz \
-		--enh-annotations annot/hg38/F5.hg38.enhancers.bed.gz \
-		--chrom chr20 \
-		--window-size 25 --prom-loc 80 --nth 1 \
-		--out test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
+		--chrom chr20 --out test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
 	```
 
-3) Output looks like: (header: chrom, mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1, mseprom, msegene, mseenh).
+3) Output looks like: (header: bootstrap_index, mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1, mseprom, msegene, mseenh).
 	```bash
-	chr20	20.45688606636623	1730.3503548526915	195.52252657980728	0.01705378703206674	848	3462	2976	0.5852748736100822	0.590682173511888	376.1018309950674	31.24613030186926	94.01719916101615
+	no_bootstrap	20.45688606636623	1730.3503548526915	195.52252657980728	0.01705378703206674	848	3462	2976	0.5852748736100822	0.590682173511888	376.1018309950674	31.24613030186926	94.01719916101615
 	```
 
 
@@ -47,3 +43,17 @@ In order to validate your BIGWIG. Use `validate.py`.
 ```bash
 $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 ```
+
+## For challenge admins
+
+### How to generate bootstrapped labels?
+
+Download `submission_template.bigwig` from Synapse imputation challenge site. The following command will make 10-fold (default) bootstrapped index for each chromosome. Output is a single `.npy` file which have all bootstrapped labels for corresponding bootstrap index and chromosomes.
+
+```bash
+$ python build_bootstrapped_label.py submission_template.bigwig
+```
+
+### How to use bootstrapped label?
+
+Simply run `score.py` with `--bootstrapped-label-npy bootstrapped_label.npy`.

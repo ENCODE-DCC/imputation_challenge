@@ -9,3 +9,9 @@ annot/hg19
 test
 test.py
 join.log
+*.npy
+*.npz
+*.db
+*.tsv
+__pycache__
+
