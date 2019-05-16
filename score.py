@@ -12,6 +12,7 @@ import os
 import gzip
 import sqlite3
 import time
+import gc
 from collections import namedtuple
 from sklearn.metrics import roc_auc_score
 from scipy.stats import norm
@@ -25,13 +26,15 @@ log = logging.getLogger(__name__)
 
 Score = namedtuple(
     'Score',
-    ('mse', 'mse1obs', 'mse1imp', 'gwcorr',
-     'mseprom', 'msegene', 'mseenh'))
+    ('mse', 'gwcorr', 'gwspear', 'mseprom', 'msegene', 'mseenh',
+     'msevar', 'mse1obs', 'mse1imp')
+)
 
 ScoreDBRecord = namedtuple(
     'ScoreDBRecord',
     ('submission_id', 'team_id', 'submission_fname', 'cell', 'assay',
-     'bootstrap_id', 'chroms') + Score._fields)
+     'bootstrap_id', 'chroms') + Score._fields
+)
 
 DB_TABLE_SCORE = 'score'
 DB_QUERY_INSERT = 'INSERT INTO {table} ({cols}) VALUES ({values});'
@@ -41,27 +44,12 @@ def mse(y_true, y_pred):
     return ((y_true - y_pred) ** 2.).mean()
 
 
-def mse1obs(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_true_top1 = y_true_sorted[-n]
-    idx = y_true >= y_true_top1
-
-    return mse(y_true[idx], y_pred[idx])
-
-
-def mse1imp(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_pred_top1 = y_pred_sorted[-n]
-    idx = y_pred >= y_pred_top1
-
-    return mse(y_true[idx], y_pred[idx])
-
-
 def gwcorr(y_true, y_pred):
     return numpy.corrcoef(y_true, y_pred)[0, 1]
+
+
+def gwspear(y_true, y_pred):
+    return 0.0
 
 
 def mseprom(y_true_dict, y_pred_dict, chroms,
@@ -200,7 +188,7 @@ def mseenh(y_true_dict, y_pred_dict, chroms,
     return sse / n
 
 
-def msevar(y_true, y_pred, y_all):
+def msevar(y_true, y_pred, y_all=None, var=None):
     """Calculates the MSE weighted by the cross-cell-type variance.
 
     According to the wiki: Computing this measure involves computing,
@@ -218,8 +206,13 @@ def msevar(y_true, y_pred, y_all):
     y_pred: numpy.ndarray, shape=(n_positions,)
         The predicted signal
 
-    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
+    y_all: numpy.ndarray, shape=(n_celltypes, n_positions)
         The true signal from all the cell types to calculate the variance over.
+        mutually exclusive with var
+
+    var: numpy.ndarray, shape=(n_positions,)
+        pre-computed var vector
+        mutually exclusive with y_all
 
     Returns
     -------
@@ -228,119 +221,39 @@ def msevar(y_true, y_pred, y_all):
         variance.
     """
 
-    var = numpy.std(y_all, axis=0) ** 2
+    if var is None and y_all is None:
+        return 0.0
+    if var is None:
+        var = numpy.std(y_all, axis=0) ** 2
     var /= var.sum()
+
     return ((y_true - y_pred) ** 2).dot(var)
 
 
-def msespec(y_true, y_pred, y_all):
-    """Calculates the MSE weighted by the specificity of the signal.
+def mse1obs(y_true, y_pred):
+    n = int(y_true.shape[0] * 0.01)
+    y_true_sorted = numpy.sort(y_true)
+    y_true_top1 = y_true_sorted[-n]
+    idx = y_true >= y_true_top1
 
-    Anshul has not sent me this yet so I'm not sure what to put here.
-
-    According to the wiki: Test values that are cell type-specific are
-    typically the hardest to impute; hence, we upweight such bins. A
-    weight is computed for each bin in the genome based on how specific
-    the signal is in the test cell type relative to training cell types.
-    Specifically, for each bin in the genome, we compute the mutual information
-    between the signal vector for the bin across test and training cell types
-    [S_t, S_r1, S_r2, S_r3, ....] (where S_t is the signal in the test cell
-    type and S_ri is the signal value in the i-th training cell type) and an
-    idealized vector of test cell type specific activation [1,0,0,0,....] as
-    well as an idealized vector for test cell-type specific repression
-    [0,1,1,1,.....].
-    We use as the weight the maximum of these two mutual information values.
-    As in MSEvar, the weights are normalized across all bins in the genome to
-    sum to 1. The squared error between the predicted and true value at each
-    genomic position is multiplied by this weight before being averaged across
-    the genome.
-
-    Parameters
-    ----------
-    y_true: numpy.ndarray, shape=(n_positions,)
-        The true signal
-
-    y_pred: numpy.ndarray, shape=(n_positions,)
-        The predicted signal
-
-    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
-        The true signal from all the cell types to calculate the variance over.
-
-    Returns
-    -------
-    mse: float
-        The mean-squared error that's weighted at each position by the
-        variance.
-    """
-
-    return 0
+    return mse(y_true[idx], y_pred[idx])
 
 
-def mseSpec2(y_true, y_pred, y_all):
-    """Calculates the MSE weighted by the specificity of the signal.
+def mse1imp(y_true, y_pred):
+    n = int(y_true.shape[0] * 0.01)
+    y_pred_sorted = numpy.sort(y_pred)
 
-    This is my implementation of a metric that weights each position by how
-    different it is from the training cell types. Essentially, a normal
-    distribution is fit to the values in the training cell types at each
-    position, and the -logp is calculated for the test set value. This will
-    give high weights to values that are very different, and low weights
-    to values that are similar.
+    y_pred_top1 = y_pred_sorted[-n]
+    idx = y_pred >= y_pred_top1
 
-    Parameters
-    ----------
-    y_true: numpy.ndarray, shape=(n_positions,)
-        The true signal
-
-    y_pred: numpy.ndarray, shape=(n_positions,)
-        The predicted signal
-
-    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
-        The true signal from all the cell types to calculate the normal
-        disribution over.
-
-    Returns
-    -------
-    mse: float
-        The mean-squared error that's weighted at each position by -logp.
-    """
-
-    mu = y_all.mean(axis=0)
-    std = y_all.std(axis=0)
-    std[std < 0.01] = 0.01
-    n = y_true.shape[0]
-
-    return (-norm.logpdf(y_pred, mu, std)).dot((y_true -
-                                                y_pred) ** 2) / n
-
-
-def mseDiff(y_true, y_pred):
-    """Calculates the MSE over the difference in the tracks.
-
-    This metric captures the smoothness of the signal. The difference between
-    adjacent positions is first calculated for both the real signal and the
-    imputed signal, and then the MSE is calculated over that.
-
-    Parameters
-    ----------
-    y_true: numpy.ndarray, shape=(n_positions,)
-        The true signal
-
-    y_pred: numpy.ndarray, shape=(n_positions,)
-        The predicted signal
-
-    Returns
-    -------
-    mse: float
-        The mean-squared error over the difference.
-    """
-
-    return ((numpy.diff(y_true) - numpy.diff(y_pred)) ** 2).mean()
+    return mse(y_true[idx], y_pred[idx])
 
 
 def score(y_pred_dict, y_true_dict, chroms,
           gene_annotations, enh_annotations,
           window_size=25, prom_loc=80,
-          bootstrapped_label_dict=None):
+          bootstrapped_label_dict=None,
+          y_var_true_dict=None):
     """Calculate score
 
     Args:
@@ -358,12 +271,15 @@ def score(y_pred_dict, y_true_dict, chroms,
     # concat all chromosomes
     y_pred = dict_to_arr(y_pred_dict, chroms, bootstrapped_label_dict)
     y_true = dict_to_arr(y_true_dict, chroms, bootstrapped_label_dict)
+    if y_var_true_dict is None:
+        y_var_true = None
+    else:
+        y_var_true = dict_to_arr(y_var_true_dict, chroms, bootstrapped_label_dict)
 
     output = Score(
         mse=mse(y_true, y_pred),
-        mse1obs=mse1obs(y_true, y_pred),
-        mse1imp=mse1imp(y_true, y_pred),
         gwcorr=gwcorr(y_true, y_pred),
+        gwspear=gwspear(y_true, y_pred),
         mseprom=mseprom(y_true_dict, y_pred_dict, chroms,
                         gene_annotations,
                         window_size, prom_loc,
@@ -376,6 +292,9 @@ def score(y_pred_dict, y_true_dict, chroms,
                       enh_annotations,
                       window_size,
                       bootstrapped_label_dict),
+        msevar=msevar(y_true, y_pred, var=y_var_true),
+        mse1obs=mse1obs(y_true, y_pred),
+        mse1imp=mse1imp(y_true, y_pred),
     )
     return output
 
@@ -466,11 +385,21 @@ def parse_arguments():
     py_path = os.path.dirname(os.path.realpath(__file__))
 
     parser = argparse.ArgumentParser(
-        prog='ENCODE Imputation Challenge scoring script')
+        prog='ENCODE Imputation Challenge scoring script. .npy or .npz must be built '
+             'with a correct --window-size. i.e. containing a value for each bin')
     parser.add_argument('file_pred',
                         help='Submission bigwig (or .npy .npz) file to be scored')
     parser.add_argument('file_true',
                         help='Truth bigwig (or .npy .npz) file')
+    parser.add_argument('--var-npy',
+                        help='Truth .npy file filled with a variance for each bin '
+                        'instead of a raw signal value. '
+                        'Variance must be computed over all cell types for a target '
+                        'assay type. This should have a object form of '
+                        '{ chrom: [var1, var2, ...] } length([var, ...]) should match '
+                        'with the number of bins per chromosome. '
+                        'Use build_var_npy.py TRUTH_NPY_CELL1 TRUTH_NPY_CELL2 ... '
+                        'to build such .npy over all cell types for a target assay')
     p_score = parser.add_argument_group(
                         title='Scoring parameters')
     p_score.add_argument('--chrom', nargs='+',
@@ -536,6 +465,8 @@ def parse_arguments():
         args.file_pred = args.file_pred.strip("'")
     if args.file_true is not None:
         args.file_true = args.file_true.strip("'")
+    if args.var_npy is not None:
+        args.var_npy = args.var_npy.strip("'")
     if args.out_file is not None:
         args.out_file = args.out_file.strip("'")
 
@@ -581,9 +512,25 @@ def read_annotation_bed(bed):
     return result
 
 
+def del_unused_chroms_from_dict(d, chroms):
+    """Remove reference to data for unused chroms from dict and
+    do GC
+    """
+    if d is None:
+        return
+    unused_chroms = set(d.keys()) - set(chroms)
+    for c in unused_chroms:
+        del d[c]
+
+    gc.collect()        
+    return
+
+
 def main():
     # read params
     args = parse_arguments()
+
+    gc.disable()
 
     if args.file_pred.endswith(('.npy', '.npz')):
         log.info('Opening prediction numpy array file...')
@@ -596,6 +543,9 @@ def main():
     else:
         raise NotImplementedError('Unsupported file type')
 
+    # free unused chroms from memory (GC)
+    del_unused_chroms_from_dict(y_pred_dict, args.chrom)
+
     if args.file_true.endswith(('.npy', '.npz')):
         log.info('Opening truth numpy array file...')
         y_true_dict = numpy.load(args.file_true, allow_pickle=True)[()]
@@ -605,6 +555,18 @@ def main():
         y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
     else:
         raise NotImplementedError('Unsupported file type')
+
+    del_unused_chroms_from_dict(y_true_dict, args.chrom)
+
+    if args.var_npy is None:
+        y_var_true_dict = None
+    elif args.var_npy.endswith(('.npy', '.npz')):
+        log.info('Opening truth var numpy array file...')
+        y_var_true_dict = numpy.load(args.var_npy, allow_pickle=True)[()]
+    else:
+        raise ValueError('Var true file should be a binned .npy or .npz.')
+
+    del_unused_chroms_from_dict(y_var_true_dict, args.chrom)
 
     log.info('Reading from enh_annotations...')
     enh_annotations = read_annotation_bed(args.enh_annotations)
@@ -618,6 +580,9 @@ def main():
                                          allow_pickle=True)
     else:
         bootstrapped_labels = [None]
+
+    for label in bootstrapped_labels:        
+        del_unused_chroms_from_dict(label, args.chrom)
 
     with open(args.out_file, 'w') as fp:
         for k, label in enumerate(bootstrapped_labels):
@@ -633,7 +598,8 @@ def main():
             score_output = score(y_pred_dict, y_true_dict, args.chrom,
                            gene_annotations, enh_annotations,
                            args.window_size, args.prom_loc,
-                           label)
+                           label,
+                           y_var_true_dict)
             # write to TSV
             s = "\t".join([bootstrap]+[str(o) for o in score_output])
             fp.write(s+'\n')

@@ -26,12 +26,14 @@ SCORE_DB_RECORD_VAR_TYPE = score.ScoreDBRecord(
     bootstrap_id='integer NOT NULL',
     chroms='text NOT NULL',
     mse='double NOT NULL',
-    mse1obs='double NOT NULL',
-    mse1imp='double NOT NULL',
     gwcorr='double NOT NULL',
+    gwspear='double NOT NULL',
     mseprom='double NOT NULL',
     msegene='double NOT NULL',
-    mseenh='double NOT NULL'
+    mseenh='double NOT NULL',
+    msevar='double NOT NULL',
+    mse1obs='double NOT NULL',
+    mse1imp='double NOT NULL'
 )
 
 

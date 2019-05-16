@@ -24,7 +24,7 @@ $ pip install numpy scikit-learn pyBigWig
 	$ wget https://www.encodeproject.org/files/ENCFF074VQD/@@download/ENCFF074VQD.bigWig
 	```
 
-2) Run it.
+2) Run it. If you score without a variance `.npy` file specified as `--var-npy`, then `msevar` metric will be `0.0`.
 	```bash
 	$ python score.py test/hg38/ENCFF622DXZ.bigWig test/hg38/ENCFF074VQD.bigWig \
 		--chrom chr20 --out-file test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
@@ -48,7 +48,7 @@ $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 
 1) [Generate bootstrap label](#how-to-generate-bootstrap-labels)
 
-2) In order to speed up scoring, convert `TRUTH_BIGWIG` into numpy array/object.
+2) In order to speed up scoring, convert `TRUTH_BIGWIG` into numpy array/object (binned at `25`). Repeat this for each pair of cell type and assay.
 	```bash
 	$ python build_npy_from_bigwig.py [TRUTH_BIGWIG] --out-npy-prefix [TRUTH_NPY_PREFIX]
 	```
@@ -58,10 +58,15 @@ $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 	$ python create_db.py [SCORE_DB_FILE]
 	```
 
-4) Score each submission with bootstrap labels. `--validated` is only for validated submissions binned at `25`. With this flag turned on, `score.py` will skip interpolation of intervals in a bigwig. For ranking, you need to define all metadata for a submission like `--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] -t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]`. These values will be written to a database file together with bootstrap scores.
+4) For each assay type, build a variance `.npy` file, which calculates a variance for each bin for each chromosome across all cell types. Without this variance file, `msevar` will be `0.0`.
+	$ python build_var_npy.py [TRUTH_NPY_CELL1] [TRUTH_NPY_CELL2] ... \
+		--out-npy-prefix var_[ASSAY_OR_MARK_ID]
+
+5) Score each submission with bootstrap labels. `--validated` is only for validated submissions binned at `25`. With this flag turned on, `score.py` will skip interpolation of intervals in a bigwig. For ranking, you need to define all metadata for a submission like `--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] -t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]`. These values will be written to a database file together with bootstrap scores. Repeat this for each submission (one submission per team for each pair of cell type and assay).
 	```bash
 	$ python score.py [YOUR_VALIDATED_SUBMISSION] [TRUTH_NPY] \
 	    --bootstrapped-label-npy [BOOTSTRAP_LABEL_NPY] \
+	    --var-npy var_[ASSAY_OR_MARK_ID].npy
 		--out-db-file [SCORE_DB_FILE] \
 		--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] \
 		-t [TEAM_ID_INT] -s [SUBMISSION_ID_INT] \
