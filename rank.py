@@ -280,8 +280,7 @@ def parse_arguments():
                         default=['all'],
                         help='List of chromosomes to be used for ranking')
     parser.add_argument('--measures-to-use', nargs='+',
-                        default=['mse', 'mse1obs', 'mse1imp', 'gwcorr', 'match1',
-                                 'catch1obs', 'catch1imp', 'aucobs1', 'aucimp1',
+                        default=['mse', 'mse1obs', 'mse1imp', 'gwcorr',
                                  'mseprom', 'msegene', 'mseenh'],
                         help='List of performance measures to be used for ranking')
     parser.add_argument('--log-level', default='INFO',

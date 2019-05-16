@@ -25,8 +25,7 @@ log = logging.getLogger(__name__)
 
 Score = namedtuple(
     'Score',
-    ('mse', 'mse1obs', 'mse1imp', 'gwcorr', 'match1',
-     'catch1obs', 'catch1imp', 'aucobs1', 'aucimp1',
+    ('mse', 'mse1obs', 'mse1imp', 'gwcorr',
      'mseprom', 'msegene', 'mseenh'))
 
 ScoreDBRecord = namedtuple(
@@ -63,68 +62,6 @@ def mse1imp(y_true, y_pred):
 
 def gwcorr(y_true, y_pred):
     return numpy.corrcoef(y_true, y_pred)[0, 1]
-
-
-def match1(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_true_top1 = y_true_sorted[-n]
-    y_pred_top1 = y_pred_sorted[-n]
-
-    y_true_top = y_true >= y_true_top1
-    y_pred_top = y_pred >= y_pred_top1
-
-    return (y_true_top & y_pred_top).sum()
-
-
-def catch1obs(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_true_top1 = y_true_sorted[-n]
-    y_pred_top1 = y_pred_sorted[-n*5]
-
-    y_true_top = y_true >= y_true_top1
-    y_pred_top = y_pred >= y_pred_top1
-
-    return (y_true_top & y_pred_top).sum()
-
-
-def catch1imp(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_true_top1 = y_true_sorted[-n*5]
-    y_pred_top1 = y_pred_sorted[-n]
-
-    y_true_top = y_true >= y_true_top1
-    y_pred_top = y_pred >= y_pred_top1
-
-    return (y_true_top & y_pred_top).sum()
-
-
-def aucobs1(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-
-    y_true_top1 = y_true_sorted[-n]
-    y_true_top = y_true >= y_true_top1
-
-    return roc_auc_score(y_true_top, y_pred)
-
-
-def aucimp1(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_pred_top1 = y_pred_sorted[-n]
-    y_pred_top = y_pred >= y_pred_top1
-
-    return roc_auc_score(y_pred_top, y_true)
 
 
 def mseprom(y_true_dict, y_pred_dict, chroms,
@@ -263,7 +200,7 @@ def mseenh(y_true_dict, y_pred_dict, chroms,
     return sse / n
 
 
-def mseVar(y_true, y_pred, y_all):
+def msevar(y_true, y_pred, y_all):
     """Calculates the MSE weighted by the cross-cell-type variance.
 
     According to the wiki: Computing this measure involves computing,
@@ -296,7 +233,7 @@ def mseVar(y_true, y_pred, y_all):
     return ((y_true - y_pred) ** 2).dot(var)
 
 
-def mseSpec(y_true, y_pred, y_all):
+def msespec(y_true, y_pred, y_all):
     """Calculates the MSE weighted by the specificity of the signal.
 
     Anshul has not sent me this yet so I'm not sure what to put here.
@@ -427,11 +364,6 @@ def score(y_pred_dict, y_true_dict, chroms,
         mse1obs=mse1obs(y_true, y_pred),
         mse1imp=mse1imp(y_true, y_pred),
         gwcorr=gwcorr(y_true, y_pred),
-        match1=match1(y_true, y_pred),
-        catch1obs=catch1obs(y_true, y_pred),
-        catch1imp=catch1imp(y_true, y_pred),
-        aucobs1=aucobs1(y_true, y_pred),
-        aucimp1=aucimp1(y_true, y_pred),
         mseprom=mseprom(y_true_dict, y_pred_dict, chroms,
                         gene_annotations,
                         window_size, prom_loc,
