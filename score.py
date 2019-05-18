@@ -15,7 +15,7 @@ import time
 import gc
 from collections import namedtuple
 from sklearn.metrics import roc_auc_score
-from scipy.stats import norm
+from scipy.stats import norm, spearmanr
 import logging
 
 logging.basicConfig(
@@ -49,7 +49,7 @@ def gwcorr(y_true, y_pred):
 
 
 def gwspear(y_true, y_pred):
-    return 0.0
+    return spearmanr(y_true, y_pred)[0]
 
 
 def mseprom(y_true_dict, y_pred_dict, chroms,
