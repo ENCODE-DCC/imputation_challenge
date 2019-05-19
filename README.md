@@ -3,12 +3,12 @@
 ## Installation for dependencies (pip)
 
 ```bash
-$ pip install numpy scikit-learn pyBigWig
+$ pip install numpy scikit-learn pyBigWig scipy
 ```
 
 ## Installation for dependencies (Conda)
 
-1) [Install Conda](https://conda.io/docs/user-guide/install/linux.html) first.
+1) [Install Conda](https://docs.conda.io/en/latest/miniconda.html) first.
 
 2) Install `numpy`, `scikit-learn` and `pyBigWig`.
 	```bash
