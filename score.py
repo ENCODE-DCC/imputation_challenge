@@ -319,17 +319,44 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False, logger=None):
             all_steps = bw.intervals(c)
             assert(num_step==len(all_steps))
 
-        for step in range(num_step):
-            start = step*window_size
-            end = min((step+1)*window_size, chrom_len)
-            if validated:
+            for step in range(num_step):
+                start = step*window_size
+                end = min((step+1)*window_size, chrom_len)
                 result_per_chr.append(all_steps[step][2])
+        else:
+            # reshape raw vector as (num_step, window_size)
+            raw = bw.values(c, 0, chrom_len, numpy=True)
+            reshaped = np.zeros((num_step*window_size,))
+            reshaped[:x.shape[0]] = raw
+            # pyBigWig returns nan for values out of bounds
+            # convert nan to zero
+            x = np.nan_to_num(reshaped)
+            y = np.reshape(x, (-1, window_size))
+            # bin it
+            # reduce dimension to (num_step, 0) by averaging
+            # all values in a step
+            result_per_chr = zz.mean(axis=1)
+
+            # special treatment for last step
+            # above averaging method does not work with the end step
+            last_step = num_step-1
+            start = last_step*window_size
+            end = min((last_step+1)*window_size, chrom_len)
+            stat = bw.stats(c, start, end, exact=True)
+            if stat[0] is None:
+                result_per_chr[-1]=0.0
             else:
-                stat = bw.stats(c, start, end, exact=True)
-                if stat[0] is None:
-                    result_per_chr.append(0)
-                else:
-                    result_per_chr.append(stat[0])
+                result_per_chr[-1]=stat[0]
+
+            # too expensive
+            # for step in range(num_step):
+            #     start = step*window_size
+            #     end = min((step+1)*window_size, chrom_len)
+            #     stat = bw.stats(c, start, end, exact=True)
+            #     if stat[0] is None:
+            #         result_per_chr.append(0)
+            #     else:
+            #         result_per_chr.append(stat[0])
 
         result[c] = numpy.array(result_per_chr)
     return result
