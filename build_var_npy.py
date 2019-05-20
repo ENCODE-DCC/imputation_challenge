@@ -63,6 +63,7 @@ def main():
 
     log.info('Opening bigwig/npy files...')
     for f in args.bw_or_npy:
+        log.info('Reading from {}...'.format(f))
         if f.endswith(('.npy', '.npz')):
             y_dict = numpy.load(f, allow_pickle=True)[()]
         elif args.bw_or_npy.lower().endswith(('.bw','.bigwig')):
