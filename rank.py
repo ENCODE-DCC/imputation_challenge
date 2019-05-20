@@ -252,7 +252,7 @@ def calc_global_ranks(rows, measures_to_use):
                 global_scores[index][team_id].append(0.5)                
 
         print('# {} ({})'.format(get_cell_name(cell), get_assay_name(assay)))
-        print(' | '.join(('Team name', 'rank')))
+        print(' | '.join(('Team', 'name', 'rank')))
         print('|'.join(('----',)*3))
         for (team_id, submission_id), ranks in sorted(
                 user_ranks.items(), key=lambda x: sorted(x[1])[1]):
