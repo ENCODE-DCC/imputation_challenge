@@ -202,7 +202,7 @@ def calc_combined_ranks(rows, measures_to_use):
 
     scores = numpy.zeros(len(team_ids), dtype=float)
     for user_i, attr in enumerate(measures_to_use):
-        rank_method = RANK_METHOD_FOR_EACH_METRIC(attr)
+        rank_method = RANK_METHOD_FOR_EACH_METRIC[attr]
         attr_scores = numpy.array([getattr(x, attr) for x in rows])
         if rank_method == 'ASCENDING':
             ranks = rankdata(-attr_scores, "average")
