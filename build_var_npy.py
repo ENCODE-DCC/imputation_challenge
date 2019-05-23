@@ -20,8 +20,8 @@ log = logging.getLogger(__name__)
 def parse_arguments():
     parser = argparse.ArgumentParser(
         prog='ENCODE Imputation Challenge variance .npy builder')
-    parser.add_argument('bw_or_npy', nargs='+',
-                        help='Truth bigwig (or binned .npy) files')
+    parser.add_argument('npy', nargs='+',
+                        help='Binned truth .npy file')
     parser.add_argument('--out-npy-prefix', required=True,
                          help='Output prefix for .npy or .npz')
     p_score = parser.add_argument_group(
@@ -43,8 +43,8 @@ def parse_arguments():
     args = parser.parse_args()
 
     # some submission files have whitespace in path...
-    for i, f in enumerate(args.bw_or_npy):
-        args.bw_or_npy[i] = f.strip("'")
+    for i, f in enumerate(args.npy):
+        args.npy[i] = f.strip("'")
     if args.chrom == ['all']:
         args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
 
@@ -61,17 +61,10 @@ def main():
     for c in args.chrom:
         y_all[c] = []
 
-    log.info('Opening bigwig/npy files...')
-    for f in args.bw_or_npy:
+    log.info('Opening npy files...')
+    for f in args.npy:
         log.info('Reading from {}...'.format(f))
-        if f.endswith(('.npy', '.npz')):
-            y_dict = numpy.load(f, allow_pickle=True)[()]
-        elif args.bw_or_npy.lower().endswith(('.bw','.bigwig')):
-            bw = pyBigWig.open(f)
-            y_dict = bw_to_dict(bw, args.chrom, args.window_size)
-        else:
-            raise NotImplementedError('Unsupported file type')
-
+        y_dict = numpy.load(f, allow_pickle=True)[()]
         for c in args.chrom:
             y_all[c].append(y_dict[c])
 
@@ -79,7 +72,7 @@ def main():
     for c in args.chrom:
       var[c] = numpy.std(numpy.array(y_all[c]), axis=0) ** 2
 
-    log.info('Writing to npy or npz...')
+    log.info('Writing to npy...')
     numpy.save(args.out_npy_prefix, var)
 
     log.info('All done')

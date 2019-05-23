@@ -24,7 +24,6 @@ SCORE_DB_RECORD_VAR_TYPE = ScoreDBRecord(
     cell='text NOT NULL',
     assay='text NOT NULL',
     bootstrap_id='integer NOT NULL',
-    chroms='text NOT NULL',
     mse='double NOT NULL',
     gwcorr='double NOT NULL',
     gwspear='double NOT NULL',

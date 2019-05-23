@@ -1,12 +1,6 @@
 # ENCODE Imputation Challenge Scoring and Validation Scripts
 
-## Installation for dependencies (pip)
-
-```bash
-$ pip install numpy scikit-learn pyBigWig scipy
-```
-
-## Installation for dependencies (Conda)
+## Installation
 
 1) [Install Conda](https://docs.conda.io/en/latest/miniconda.html) first.
 
@@ -24,15 +18,21 @@ $ pip install numpy scikit-learn pyBigWig scipy
 	$ wget https://www.encodeproject.org/files/ENCFF074VQD/@@download/ENCFF074VQD.bigWig
 	```
 
-2) Run it. If you score without a variance `.npy` file specified as `--var-npy`, then `msevar` metric will be `0.0`.
+2) Convert it to numpy array.
 	```bash
-	$ python score.py test/hg38/ENCFF622DXZ.bigWig test/hg38/ENCFF074VQD.bigWig \
+	$ python build_npy_from_bigwig.py test/hg38/ENCFF622DXZ.bigWig
+	$ python build_npy_from_bigwig.py test/hg38/ENCFF074VQD.bigWig
+	```
+
+3) Run it. If you score without a variance `.npy` file specified as `--var-npy`, then `msevar` metric will be `0.0`.
+	```bash
+	$ python score.py test/hg38/ENCFF622DXZ.npy test/hg38/ENCFF074VQD.npy \
 		--chrom chr20 --out-file test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
 	```
 
-3) Output looks like: (header: bootstrap_index, mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1, mseprom, msegene, mseenh).
+4) Output looks like: (header: bootstrap_index, mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1, mseprom, msegene, mseenh).
 	```bash
-	no_bootstrap	20.45688606636623	1730.3503548526915	195.52252657980728	0.01705378703206674	848	3462	2976	0.5852748736100822	0.590682173511888	376.1018309950674	31.24613030186926	94.01719916101615
+	bootstrap_-1	20.45688606636623	1730.3503548526915	195.52252657980728	0.01705378703206674	848	3462	2976	0.5852748736100822	0.590682173511888	376.1018309950674	31.24613030186926	94.01719916101615
 	```
 
 
