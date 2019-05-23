@@ -24,7 +24,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         prog='ENCODE Imputation Challenge scoring script')
     parser.add_argument('bw',
-                        help='Bigwig file to be converted to .npy or .npz')
+                        help='Bigwig file or .npy file (for blacklist filtering)')
     parser.add_argument('--out-npy-prefix',
                          help='Output prefix for .npy or .npz')
     p_score = parser.add_argument_group(
@@ -66,8 +66,7 @@ def parse_arguments():
     return args
 
 
-def bw_to_dict(bw, chrs, window_size=25, validated=False,
-               blacklist=None, logger=None):
+def bw_to_dict(bw, chrs, window_size=25, validated=False):
     """
     Returns:
         { chr: [] } where [] is a numpy 1-dim array
@@ -128,7 +127,16 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False,
             #     else:
             #         result_per_chr.append(stat[0])
 
-        # remove blacklisted region
+        result[c] = numpy.array(bfilt_result_per_chr)
+    return result
+
+
+def blacklist_filter(d, blacklist_bins):
+    result = {}
+    for c in d:
+        result_per_chr = d[c]
+
+        # remove bins overlapping blacklisted region
         if blacklist is None:
             bfilt_result_per_chr = result_per_chr
         else:
@@ -143,7 +151,7 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False,
     return result
 
 
-def get_blacklisted_bins(blacklist, chroms, window_size=25):
+def get_blacklisted_bin_ids(blacklist, chroms, window_size=25):
     """
     Returns:
         { chrom: [] }: label that overlaps with blackstlisted region
@@ -174,18 +182,22 @@ def main():
     # read params
     args = parse_arguments()
 
+    if args.bw.lower().endswith(('bw', 'bigwig')):
+        log.info('Opening bigwig file...')
+        bw = pyBigWig.open(args.bw)
+        y_dict = bw_to_dict(bw, args.chrom, args.window_size,
+                            args.validated, log)
+    elif args.bw.lower().endswith(('npy', 'npz')):
+        y_dict = numpy.load(args.bw, allow_pickle=True)[()]
+
     if args.blacklist_file is None:
-        blacklisted_bins = None
+        bfilt_y_dict = y_dict
     else:
         log.info('Reading from blacklist bed file...')
-        blacklists = read_annotation_bed(args.blacklist_file)
-        blacklisted_bins = get_blacklisted_bins(blacklists, args.chrom,
-                                                args.window_size)
-
-    log.info('Opening bigwig file...')
-    bw = pyBigWig.open(args.bw)
-    y_dict = bw_to_dict(bw, args.chrom, args.window_size,
-                        args.validated, blacklisted_bins, log)
+        blacklist_lines = read_annotation_bed(args.blacklist_file)
+        blacklist_bin_ids = get_blacklisted_bin_ids(
+            blacklist_lines, args.chrom, args.window_size)
+        bfilt_y_dict = blacklist_bin_ids(y_dict, blacklist_bin_ids)
 
     log.info('Writing to npy or npz...')
     if args.out_npy_prefix is None:
@@ -193,7 +205,8 @@ def main():
         out_npy_prefix = prefix
     else:
         out_npy_prefix = args.out_npy_prefix
-    numpy.save(out_npy_prefix, y_dict)
+
+    numpy.save(out_npy_prefix, bfilt_y_dict)
 
     log.info('All done')
 
