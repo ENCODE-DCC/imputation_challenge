@@ -225,9 +225,8 @@ def msevar(y_true, y_pred, y_all=None, var=None):
         return 0.0
     if var is None:
         var = numpy.std(y_all, axis=0) ** 2
-    var /= var.sum()
 
-    return ((y_true - y_pred) ** 2).dot(var)
+    return ((y_true - y_pred) ** 2).dot(var)/var.sum()
 
 
 def mse1obs(y_true, y_pred):
