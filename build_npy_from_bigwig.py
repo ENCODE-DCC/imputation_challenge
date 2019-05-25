@@ -74,10 +74,7 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False):
     result = {}
     for c in chrs:
         log_msg = 'Reading chromosome {} from bigwig...'.format(c)
-        if logger is None:
-            log.info(log_msg)
-        else:
-            logger.info(log_msg)
+        log.info(log_msg)
         result_per_chr = []
         chrom_len = bw.chroms()[c]
 
@@ -127,11 +124,11 @@ def bw_to_dict(bw, chrs, window_size=25, validated=False):
             #     else:
             #         result_per_chr.append(stat[0])
 
-        result[c] = numpy.array(bfilt_result_per_chr)
+        result[c] = numpy.array(result_per_chr)
     return result
 
 
-def blacklist_filter(d, blacklist_bins):
+def blacklist_filter(d, blacklist):
     result = {}
     for c in d:
         result_per_chr = d[c]
@@ -151,7 +148,7 @@ def blacklist_filter(d, blacklist_bins):
     return result
 
 
-def get_blacklisted_bin_ids(blacklist, chroms, window_size=25):
+def get_blacklist_bin_ids(blacklist, chroms, window_size=25):
     """
     Returns:
         { chrom: [] }: label that overlaps with blackstlisted region
@@ -165,8 +162,6 @@ def get_blacklisted_bin_ids(blacklist, chroms, window_size=25):
         c, start, end = line.split()
         start_bin_id = int(start) // window_size
         end_bin_id = int(end) // window_size + 1
-        print(c, start, end, start_bin_id, end_bin_id)
-
         bins[c] |= set(range(start_bin_id, end_bin_id))
 
     # convert into list and then numpy array
@@ -174,7 +169,6 @@ def get_blacklisted_bin_ids(blacklist, chroms, window_size=25):
     for c in chroms:
         result[c] = numpy.array(list(bins[c]), dtype=numpy.int64)
 
-    print(result)
     return result
 
 
@@ -186,7 +180,7 @@ def main():
         log.info('Opening bigwig file...')
         bw = pyBigWig.open(args.bw)
         y_dict = bw_to_dict(bw, args.chrom, args.window_size,
-                            args.validated, log)
+                            args.validated)
     elif args.bw.lower().endswith(('npy', 'npz')):
         y_dict = numpy.load(args.bw, allow_pickle=True)[()]
 
@@ -195,9 +189,9 @@ def main():
     else:
         log.info('Reading from blacklist bed file...')
         blacklist_lines = read_annotation_bed(args.blacklist_file)
-        blacklist_bin_ids = get_blacklisted_bin_ids(
+        blacklist_bin_ids = get_blacklist_bin_ids(
             blacklist_lines, args.chrom, args.window_size)
-        bfilt_y_dict = blacklist_bin_ids(y_dict, blacklist_bin_ids)
+        bfilt_y_dict = blacklist_filter(y_dict, blacklist_bin_ids)
 
     log.info('Writing to npy or npz...')
     if args.out_npy_prefix is None:

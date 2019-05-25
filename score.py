@@ -510,7 +510,7 @@ def main():
                     os.path.basename(args.npy_pred),
                     args.cell,
                     args.assay,
-                    bootstrap_id,
+                    k,
                     *score_output)
                 write_to_db(score_db_record, args.out_db_file)
 
