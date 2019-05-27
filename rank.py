@@ -9,6 +9,7 @@ import sys
 import argparse
 import sqlite3
 import numpy
+import time
 from collections import namedtuple, defaultdict
 from score import DB_TABLE_SCORE, ScoreDBRecord
 from scipy.stats import rankdata
@@ -20,7 +21,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-DB_QUERY_GET = 'SELECT * FROM {table} WHERE chroms="{chroms}" ORDER BY bootstrap_id, submission_id;'
+DB_QUERY_GET = 'SELECT * FROM {table} ORDER BY bootstrap_id, submission_id;'
 CELL_NAME = {
     'C02': 'adrenal_gland',
     'C20': 'heart_left_ventricle',
@@ -130,20 +131,45 @@ GlobalScore = namedtuple(
     ['team_id', 'name', 'score_lb', 'score_mean', 'score_ub', 'rank'])
 
 
+
+TEAM_ID_FOR_ROUND1 = {
+    0: 'Avocado_p0',
+    1: 'Avocado_p1',
+    2: 'Avocado_p2',
+    3: 'Avocado_p3',
+    4: 'Avocado_p4',
+    5: 'Avocado_p5',
+    6: 'Avocado_p6',
+    7: 'Avocado_p7',
+    8: 'Avocado_p8',
+    9: 'Avocado_p9',
+    10: 'Avocado_p10',
+    20: 'Average',
+    1000 : 'BrokenNodes',
+    1010 : 'ENCODE_DCC_Imputes',
+    1020 : 'Hongyang_Li_and_Yuanfang_Guan',
+    1030 : 'KKT-ENCODE-Impute-model_1',
+    1031 : 'KKT-ENCODE-Impute-model_2',
+    1040 : 'LiPingChun',
+    1050 : 'MLeipzig',
+    1060 : 'noml'
+}
+
+
 def get_team_name(team_id):
-    return str(team_id)
+    return TEAM_ID_FOR_ROUND1[team_id]
 
 
 def get_cell_name(cell_id):
     if cell_id in CELL_NAME:
-        return CELL_NAME[cell_id].capitalize().replace('_', ' ')
+        return CELL_NAME[cell_id].replace('_', ' ')
     else:
         return str(cell_id)
 
 
 def get_assay_name(assay_id):
     if assay_id in ASSAY_NAME:
-        return ASSAY_NAME[assay_id].capitalize().replace('_', ' ')
+        return ASSAY_NAME[assay_id].replace('_', ' ')
     else:
         return str(assay_id)
 
@@ -164,8 +190,8 @@ def read_scores_from_db(db_file, chroms):
     Returns:
         All rows ordered by bootstrap_id and team_id
     """
-    valid_chrs_str = ','.join(sorted(chroms))
-    query = DB_QUERY_GET.format(table=DB_TABLE_SCORE, chroms=valid_chrs_str)
+    # valid_chrs_str = ','.join(sorted(chroms))
+    query = DB_QUERY_GET.format(table=DB_TABLE_SCORE)  #, chroms=valid_chrs_str)
     log.info(query)
 
     while True:
@@ -296,6 +322,8 @@ def parse_arguments():
                                           'script.')
     parser.add_argument('db_file',
                         help='SQLite3 DB file with all scores.')
+    parser.add_argument('--show-score-only', action='store_true',
+                        help='Show score (from DB) only')
     parser.add_argument('--chrom', nargs='+',
                         default=['all'],
                         help='List of chromosomes to be used for ranking')
@@ -317,6 +345,33 @@ def parse_arguments():
     return args
 
 
+def show_score(rows):
+    print('\t'.join(['submission_id', 'team', 'cell', 'assay', 'bootstraip_id', 
+                    'mse', 'gwcorr', 'gwspear', 'mseprom', 'msegene', 'mseenh',
+                    'msevar', 'mse1obs', 'mse1imp']))
+    for x in rows:
+        mse = x.mse
+        gwcorr = x.gwcorr
+        gwspear = x.gwspear
+        mseprom = x.mseprom
+        msegene = x.msegene
+        mseenh = x.mseenh
+        msevar = x.msevar
+        mse1obs = x.mse1obs
+        mse1imp = x.mse1imp
+        
+        submission_id= x.submission_id
+        team= get_team_name(x.team_id)
+        cell= get_cell_name(x.cell)
+        assay= get_assay_name(x.assay)
+        bootstrap_id= x.bootstrap_id
+
+        print('\t'.join([str(i) for i in \
+                             [submission_id, team, cell, assay, bootstrap_id,
+                              mse, gwcorr, gwspear, mseprom, msegene, mseenh,
+                              msevar, mse1obs, mse1imp]]))
+
+
 def main():
     # read params
     args = parse_arguments()
@@ -324,8 +379,12 @@ def main():
     log.info('Reading from DB file...')
     rows = read_scores_from_db(args.db_file, args.chrom)
 
-    log.info('Calculate ranks...')
-    rv, global_data = calc_global_ranks(rows, args.measures_to_use)
+    if args.show_score_only:
+        log.info('List all scores...')
+        show_score(rows)
+    else:
+        log.info('Calculate ranks...')
+        rv, global_data = calc_global_ranks(rows, args.measures_to_use)
 
     log.info('All done.')
 
