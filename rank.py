@@ -277,7 +277,7 @@ def calc_global_ranks(rows, measures_to_use):
             for team_id in all_users - obs_users:
                 global_scores[index][team_id].append(0.5)                
 
-        print('# {} ({})'.format(get_cell_name(cell), get_assay_name(assay)))
+        print('# {} {} ({} {})'.format(cell, get_cell_name(cell), assay, get_assay_name(assay)))
         print(' | '.join(('Team', 'name', 'rank')))
         print('|'.join(('----',)*3))
         for (team_id, submission_id), ranks in sorted(
@@ -331,14 +331,12 @@ def parse_arguments():
                         default=['mse', 'mse1obs', 'mse1imp', 'gwcorr',
                                  'mseprom', 'msegene', 'mseenh'],
                         help='List of performance measures to be used for ranking')
-    parser.add_argument('--log-level', default='INFO',
-                        choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
-                                 'CRITICAL', 'ERROR', 'CRITICAL'],
-                        help='Log level')
     args = parser.parse_args()
 
     if args.chrom == ['all']:
         args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
+
+    args.log_level = 'CRITICAL'
 
     log.setLevel(args.log_level)
     log.info(sys.argv)
@@ -346,7 +344,7 @@ def parse_arguments():
 
 
 def show_score(rows):
-    print('\t'.join(['submission_id', 'team', 'cell', 'assay', 'bootstraip_id', 
+    print('\t'.join(['submission_id', 'team', 'cell_id', 'cell', 'assay_id', 'assay', 'bootstraip_id', 
                     'mse', 'gwcorr', 'gwspear', 'mseprom', 'msegene', 'mseenh',
                     'msevar', 'mse1obs', 'mse1imp']))
     for x in rows:
@@ -362,12 +360,14 @@ def show_score(rows):
         
         submission_id= x.submission_id
         team= get_team_name(x.team_id)
+        cell_id = x.cell
         cell= get_cell_name(x.cell)
+        assay_id = x.assay
         assay= get_assay_name(x.assay)
         bootstrap_id= x.bootstrap_id
 
         print('\t'.join([str(i) for i in \
-                             [submission_id, team, cell, assay, bootstrap_id,
+                             [submission_id, team, cell_id, cell, assay_id, assay, bootstrap_id,
                               mse, gwcorr, gwspear, mseprom, msegene, mseenh,
                               msevar, mse1obs, mse1imp]]))
 
