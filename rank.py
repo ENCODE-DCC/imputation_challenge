@@ -328,8 +328,9 @@ def parse_arguments():
                         default=['all'],
                         help='List of chromosomes to be used for ranking')
     parser.add_argument('--measures-to-use', nargs='+',
-                        default=['mse', 'mse1obs', 'mse1imp', 'gwcorr',
-                                 'mseprom', 'msegene', 'mseenh'],
+                        default=['mse', 'gwcorr', 'gwspear', 'mseprom',
+                                 'msegene', 'mseenh', 'msevar', 'mse1obs',
+                                 'mse1imp'],
                         help='List of performance measures to be used for ranking')
     args = parser.parse_args()
 
