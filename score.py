@@ -12,9 +12,10 @@ import os
 import gzip
 import sqlite3
 import time
+import gc
 from collections import namedtuple
 from sklearn.metrics import roc_auc_score
-from scipy.stats import norm
+from scipy.stats import norm, spearmanr
 import logging
 
 logging.basicConfig(
@@ -25,14 +26,15 @@ log = logging.getLogger(__name__)
 
 Score = namedtuple(
     'Score',
-    ('mse', 'mse1obs', 'mse1imp', 'gwcorr', 'match1',
-     'catch1obs', 'catch1imp', 'aucobs1', 'aucimp1',
-     'mseprom', 'msegene', 'mseenh'))
+    ('mse', 'gwcorr', 'gwspear', 'mseprom', 'msegene', 'mseenh',
+     'msevar', 'mse1obs', 'mse1imp')
+)
 
 ScoreDBRecord = namedtuple(
     'ScoreDBRecord',
     ('submission_id', 'team_id', 'submission_fname', 'cell', 'assay',
-     'bootstrap_id', 'chroms') + Score._fields)
+     'bootstrap_id') + Score._fields
+)
 
 DB_TABLE_SCORE = 'score'
 DB_QUERY_INSERT = 'INSERT INTO {table} ({cols}) VALUES ({values});'
@@ -42,95 +44,17 @@ def mse(y_true, y_pred):
     return ((y_true - y_pred) ** 2.).mean()
 
 
-def mse1obs(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_true_top1 = y_true_sorted[-n]
-    idx = y_true >= y_true_top1
-
-    return mse(y_true[idx], y_pred[idx])
-
-
-def mse1imp(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_pred_top1 = y_pred_sorted[-n]
-    idx = y_pred >= y_pred_top1
-
-    return mse(y_true[idx], y_pred[idx])
-
-
 def gwcorr(y_true, y_pred):
     return numpy.corrcoef(y_true, y_pred)[0, 1]
 
 
-def match1(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_true_top1 = y_true_sorted[-n]
-    y_pred_top1 = y_pred_sorted[-n]
-
-    y_true_top = y_true >= y_true_top1
-    y_pred_top = y_pred >= y_pred_top1
-
-    return (y_true_top & y_pred_top).sum()
-
-
-def catch1obs(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_true_top1 = y_true_sorted[-n]
-    y_pred_top1 = y_pred_sorted[-n*5]
-
-    y_true_top = y_true >= y_true_top1
-    y_pred_top = y_pred >= y_pred_top1
-
-    return (y_true_top & y_pred_top).sum()
-
-
-def catch1imp(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_true_top1 = y_true_sorted[-n*5]
-    y_pred_top1 = y_pred_sorted[-n]
-
-    y_true_top = y_true >= y_true_top1
-    y_pred_top = y_pred >= y_pred_top1
-
-    return (y_true_top & y_pred_top).sum()
-
-
-def aucobs1(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_true_sorted = numpy.sort(y_true)
-
-    y_true_top1 = y_true_sorted[-n]
-    y_true_top = y_true >= y_true_top1
-
-    return roc_auc_score(y_true_top, y_pred)
-
-
-def aucimp1(y_true, y_pred):
-    n = int(y_true.shape[0] * 0.01)
-    y_pred_sorted = numpy.sort(y_pred)
-
-    y_pred_top1 = y_pred_sorted[-n]
-    y_pred_top = y_pred >= y_pred_top1
-
-    return roc_auc_score(y_pred_top, y_true)
+def gwspear(y_true, y_pred):
+    return spearmanr(y_true, y_pred)[0]
 
 
 def mseprom(y_true_dict, y_pred_dict, chroms,
             gene_annotations,
-            window_size=25, prom_loc=80,
-            bootstrapped_label_dict=None):
+            window_size=25, prom_loc=80):
     """
     Args:
         y_true_dict: truth vector per chromosome
@@ -138,18 +62,12 @@ def mseprom(y_true_dict, y_pred_dict, chroms,
 
         y_pre_dict: predicted vector per chromosome
             { chr: y_pred } where y_pred is a numpy 1-dim array.
-
-        bootstrapped_label_dict: bootstrapped_label per chromosome
     """
     sse, n = 0., 0.
 
     for chrom in chroms:
         y_true = y_true_dict[chrom]
         y_pred = y_pred_dict[chrom]
-        if bootstrapped_label_dict is None:
-            bootstrapped_label = None
-        else:
-            bootstrapped_label = set(bootstrapped_label_dict[chrom])
 
         for line in gene_annotations:
             chrom_, start, end, _, _, strand = line.split()
@@ -162,45 +80,27 @@ def mseprom(y_true_dict, y_pred_dict, chroms,
             if chrom_ != chrom:
                 continue
 
-            if bootstrapped_label is None:                
-                if strand == '+':
-                    sse += ((y_true[start-prom_loc: start] -
-                             y_pred[start-prom_loc: start]) ** 2).sum()
-                    n += y_true[start-prom_loc: start].shape[0]
+            if strand == '+':
+                sse += ((y_true[start-prom_loc: start] -
+                         y_pred[start-prom_loc: start]) ** 2).sum()
+                n += y_true[start-prom_loc: start].shape[0]
 
-                else:
-                    sse += ((y_true[end: end+prom_loc] -
-                             y_pred[end: end+prom_loc]) ** 2).sum()
-                    n += y_true[end: end+prom_loc].shape[0]
             else:
-                if strand == '+':
-                    s = start-prom_loc
-                    e = start
-                else:
-                    s = end
-                    e = end+prom_loc
-                for i in range(s, e):
-                    if i not in bootstrapped_label:
-                        continue
-                    x = (y_true[i] - y_pred[i])
-                    sse += (x*x)
-                    n += 1
+                sse += ((y_true[end: end+prom_loc] -
+                         y_pred[end: end+prom_loc]) ** 2).sum()
+                n += y_true[end: end+prom_loc].shape[0]
 
     return sse / n
 
 
 def msegene(y_true_dict, y_pred_dict, chroms,
             gene_annotations,
-            window_size=25, bootstrapped_label_dict=None):
+            window_size=25):
     sse, n = 0., 0.
 
     for chrom in chroms:
         y_true = y_true_dict[chrom]
         y_pred = y_pred_dict[chrom]
-        if bootstrapped_label_dict is None:
-            bootstrapped_label = None
-        else:
-            bootstrapped_label = set(bootstrapped_label_dict[chrom])
 
         for line in gene_annotations:
             chrom_, start, end, _, _, strand = line.split()
@@ -212,58 +112,35 @@ def msegene(y_true_dict, y_pred_dict, chroms,
 
             if chrom_ != chrom:
                 continue
-            if bootstrapped_label is None:
-                sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
-                n += end - start
-            else:
-                for i in range(start, end):
-                    if i not in bootstrapped_label:
-                        continue
-                    x = (y_true[i] - y_pred[i])
-                    sse += (x*x)
-                    n += 1
+            sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
+            n += end - start
 
     return sse / n
 
 
 def mseenh(y_true_dict, y_pred_dict, chroms,
            enh_annotations,
-           window_size=25, bootstrapped_label_dict=None):
+           window_size=25):
     sse, n = 0., 0.
 
     for chrom in chroms:
         y_true = y_true_dict[chrom]
         y_pred = y_pred_dict[chrom]
-        if bootstrapped_label_dict is None:
-            bootstrapped_label = None
-        else:
-            bootstrapped_label = set(bootstrapped_label_dict[chrom])
 
         for line in enh_annotations:
             chrom_, start, end, _, _, _, _, _, _, _, _, _ = line.split()
             start = int(start) // window_size
             end = int(end) // window_size + 1
 
-            # if chrom_ in ('chrX', 'chrY', 'chrM'):
-            #     continue
-
             if chrom_ != chrom:
                 continue
-            if bootstrapped_label is None:
-                sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
-                n += end - start
-            else:
-                for i in range(start, end):
-                    if i not in bootstrapped_label:
-                        continue
-                    x = (y_true[i] - y_pred[i])
-                    sse += (x*x)
-                    n += 1
+            sse += ((y_true[start:end] - y_pred[start:end]) ** 2).sum()
+            n += end - start
 
     return sse / n
 
 
-def mseVar(y_true, y_pred, y_all):
+def msevar(y_true, y_pred, y_all=None, var=None):
     """Calculates the MSE weighted by the cross-cell-type variance.
 
     According to the wiki: Computing this measure involves computing,
@@ -281,8 +158,13 @@ def mseVar(y_true, y_pred, y_all):
     y_pred: numpy.ndarray, shape=(n_positions,)
         The predicted signal
 
-    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
+    y_all: numpy.ndarray, shape=(n_celltypes, n_positions)
         The true signal from all the cell types to calculate the variance over.
+        mutually exclusive with var
+
+    var: numpy.ndarray, shape=(n_positions,)
+        pre-computed var vector
+        mutually exclusive with y_all
 
     Returns
     -------
@@ -291,119 +173,36 @@ def mseVar(y_true, y_pred, y_all):
         variance.
     """
 
-    var = numpy.std(y_all, axis=0) ** 2
-    var /= var.sum()
-    return ((y_true - y_pred) ** 2).dot(var)
+    if var is None and y_all is None:
+        return 0.0
+    if var is None:
+        var = numpy.std(y_all, axis=0) ** 2
+
+    return ((y_true - y_pred) ** 2).dot(var)/var.sum()
 
 
-def mseSpec(y_true, y_pred, y_all):
-    """Calculates the MSE weighted by the specificity of the signal.
+def mse1obs(y_true, y_pred):
+    n = int(y_true.shape[0] * 0.01)
+    y_true_sorted = numpy.sort(y_true)
+    y_true_top1 = y_true_sorted[-n]
+    idx = y_true >= y_true_top1
 
-    Anshul has not sent me this yet so I'm not sure what to put here.
-
-    According to the wiki: Test values that are cell type-specific are
-    typically the hardest to impute; hence, we upweight such bins. A
-    weight is computed for each bin in the genome based on how specific
-    the signal is in the test cell type relative to training cell types.
-    Specifically, for each bin in the genome, we compute the mutual information
-    between the signal vector for the bin across test and training cell types
-    [S_t, S_r1, S_r2, S_r3, ....] (where S_t is the signal in the test cell
-    type and S_ri is the signal value in the i-th training cell type) and an
-    idealized vector of test cell type specific activation [1,0,0,0,....] as
-    well as an idealized vector for test cell-type specific repression
-    [0,1,1,1,.....].
-    We use as the weight the maximum of these two mutual information values.
-    As in MSEvar, the weights are normalized across all bins in the genome to
-    sum to 1. The squared error between the predicted and true value at each
-    genomic position is multiplied by this weight before being averaged across
-    the genome.
-
-    Parameters
-    ----------
-    y_true: numpy.ndarray, shape=(n_positions,)
-        The true signal
-
-    y_pred: numpy.ndarray, shape=(n_positions,)
-        The predicted signal
-
-    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
-        The true signal from all the cell types to calculate the variance over.
-
-    Returns
-    -------
-    mse: float
-        The mean-squared error that's weighted at each position by the
-        variance.
-    """
-
-    return 0
+    return mse(y_true[idx], y_pred[idx])
 
 
-def mseSpec2(y_true, y_pred, y_all):
-    """Calculates the MSE weighted by the specificity of the signal.
+def mse1imp(y_true, y_pred):
+    n = int(y_true.shape[0] * 0.01)
+    y_pred_sorted = numpy.sort(y_pred)
+    y_pred_top1 = y_pred_sorted[-n]
+    idx = y_pred >= y_pred_top1
 
-    This is my implementation of a metric that weights each position by how
-    different it is from the training cell types. Essentially, a normal
-    distribution is fit to the values in the training cell types at each
-    position, and the -logp is calculated for the test set value. This will
-    give high weights to values that are very different, and low weights
-    to values that are similar.
-
-    Parameters
-    ----------
-    y_true: numpy.ndarray, shape=(n_positions,)
-        The true signal
-
-    y_pred: numpy.ndarray, shape=(n_positions,)
-        The predicted signal
-
-    y_all: numpy.ndarray, shape=(n_positions, n_celltypes)
-        The true signal from all the cell types to calculate the normal
-        disribution over.
-
-    Returns
-    -------
-    mse: float
-        The mean-squared error that's weighted at each position by -logp.
-    """
-
-    mu = y_all.mean(axis=0)
-    std = y_all.std(axis=0)
-    std[std < 0.01] = 0.01
-    n = y_true.shape[0]
-
-    return (-norm.logpdf(y_pred, mu, std)).dot((y_true -
-                                                y_pred) ** 2) / n
-
-
-def mseDiff(y_true, y_pred):
-    """Calculates the MSE over the difference in the tracks.
-
-    This metric captures the smoothness of the signal. The difference between
-    adjacent positions is first calculated for both the real signal and the
-    imputed signal, and then the MSE is calculated over that.
-
-    Parameters
-    ----------
-    y_true: numpy.ndarray, shape=(n_positions,)
-        The true signal
-
-    y_pred: numpy.ndarray, shape=(n_positions,)
-        The predicted signal
-
-    Returns
-    -------
-    mse: float
-        The mean-squared error over the difference.
-    """
-
-    return ((numpy.diff(y_true) - numpy.diff(y_pred)) ** 2).mean()
+    return mse(y_true[idx], y_pred[idx])
 
 
 def score(y_pred_dict, y_true_dict, chroms,
           gene_annotations, enh_annotations,
           window_size=25, prom_loc=80,
-          bootstrapped_label_dict=None):
+          y_var_true_dict=None):
     """Calculate score
 
     Args:
@@ -419,81 +218,39 @@ def score(y_pred_dict, y_true_dict, chroms,
             random seed.
     """
     # concat all chromosomes
-    y_pred = dict_to_arr(y_pred_dict, chroms, bootstrapped_label_dict)
-    y_true = dict_to_arr(y_true_dict, chroms, bootstrapped_label_dict)
+    y_pred = dict_to_arr(y_pred_dict, chroms)
+    y_true = dict_to_arr(y_true_dict, chroms)
+    if y_var_true_dict is None:
+        y_var_true = None
+    else:
+        y_var_true = dict_to_arr(y_var_true_dict, chroms)
 
     output = Score(
         mse=mse(y_true, y_pred),
-        mse1obs=mse1obs(y_true, y_pred),
-        mse1imp=mse1imp(y_true, y_pred),
         gwcorr=gwcorr(y_true, y_pred),
-        match1=match1(y_true, y_pred),
-        catch1obs=catch1obs(y_true, y_pred),
-        catch1imp=catch1imp(y_true, y_pred),
-        aucobs1=aucobs1(y_true, y_pred),
-        aucimp1=aucimp1(y_true, y_pred),
+        gwspear=gwspear(y_true, y_pred),
         mseprom=mseprom(y_true_dict, y_pred_dict, chroms,
                         gene_annotations,
-                        window_size, prom_loc,
-                        bootstrapped_label_dict),
+                        window_size, prom_loc),
         msegene=msegene(y_true_dict, y_pred_dict, chroms,
                         gene_annotations,
-                        window_size,
-                        bootstrapped_label_dict),
+                        window_size),
         mseenh=mseenh(y_true_dict, y_pred_dict, chroms,
                       enh_annotations,
-                      window_size,
-                      bootstrapped_label_dict),
+                      window_size),
+        msevar=msevar(y_true, y_pred, var=y_var_true),
+        mse1obs=mse1obs(y_true, y_pred),
+        mse1imp=mse1imp(y_true, y_pred),
     )
     return output
 
 
-def bw_to_dict(bw, chrs, window_size=25, validated=False, logger=None):
-    """
-    Returns:
-        { chr: [] } where [] is a numpy 1-dim array
-    """
-    result = {}
-    for c in chrs:
-        log_msg = 'Reading chromosome {} from bigwig...'.format(c)
-        if logger is None:
-            log.info(log_msg)
-        else:
-            logger.info(log_msg)
-        result_per_chr = []
-        chrom_len = bw.chroms()[c]
-
-        num_step = (chrom_len-1)//window_size+1
-        if validated:
-            all_steps = bw.intervals(c)
-            assert(num_step==len(all_steps))
-
-        for step in range(num_step):
-            start = step*window_size
-            end = min((step+1)*window_size, chrom_len)
-            if validated:
-                result_per_chr.append(all_steps[step][2])
-            else:
-                stat = bw.stats(c, start, end, exact=True)
-                if stat[0] is None:
-                    result_per_chr.append(0)
-                else:
-                    result_per_chr.append(stat[0])
-
-        result[c] = numpy.array(result_per_chr)
-    return result
-
-
-def dict_to_arr(d, chroms, bootstrapped_label_dict=None):
+def dict_to_arr(d, chroms):
     """Concat vectors in d
     """
     result = []
     for c in chroms:
-        if bootstrapped_label_dict is None:
-            result.extend(d[c])
-        else:
-            label_for_chr = bootstrapped_label_dict[c]
-            result.extend(d[c][label_for_chr])
+        result.extend(d[c])
     return numpy.array(result)
 
 
@@ -534,11 +291,21 @@ def parse_arguments():
     py_path = os.path.dirname(os.path.realpath(__file__))
 
     parser = argparse.ArgumentParser(
-        prog='ENCODE Imputation Challenge scoring script')
-    parser.add_argument('file_pred',
-                        help='Submission bigwig (or .npy .npz) file to be scored')
-    parser.add_argument('file_true',
-                        help='Truth bigwig (or .npy .npz) file')
+        prog='ENCODE Imputation Challenge scoring script. .npy or .npz must be built '
+             'with a correct --window-size. i.e. containing a value for each bin')
+    parser.add_argument('npy_pred',
+                        help='Submission .npy file to be scored')
+    parser.add_argument('npy_true',
+                        help='Truth .npy file')
+    parser.add_argument('--var-npy',
+                        help='Truth .npy file filled with a variance for each bin '
+                        'instead of a raw signal value. '
+                        'Variance must be computed over all cell types for a target '
+                        'assay type. This should have a object form of '
+                        '{ chrom: [var1, var2, ...] } length([var, ...]) should match '
+                        'with the number of bins per chromosome. '
+                        'Use build_var_npy.py TRUTH_NPY_CELL1 TRUTH_NPY_CELL2 ... '
+                        'to build such .npy over all cell types for a target assay')
     p_score = parser.add_argument_group(
                         title='Scoring parameters')
     p_score.add_argument('--chrom', nargs='+',
@@ -549,10 +316,12 @@ def parse_arguments():
                               'chromosomes. '
                               '(e.g. "all" or "chr3 chr21") '
                               'It should be "all" to write scores to DB file')
-    p_score.add_argument('--bootstrapped-label-npy',
-                         help='Bootstrapped label data .npy file. If given, '
-                              'all folds '
-                              'of bootstrapped samples will be scored')
+    p_score.add_argument('--bootstrap-chrom', nargs='*', default=[],
+                         help='Bootstrapped chromosome groups. '
+                              'Delimiter is whitespace for groups and '
+                              'comma(,) in each group. Order is important.'
+                              'e.g. "chr1,chr2 chr1,chrX chr2,chrX" means '
+                              'three groups: (chr1,chr2), (chr1,chrX), (chr2,chrX)')
     p_score.add_argument('--gene-annotations',
                          default=os.path.join(
                             py_path,
@@ -600,10 +369,12 @@ def parse_arguments():
     args = parser.parse_args()
 
     # some submission files have whitespace in path...
-    if args.file_pred is not None:
-        args.file_pred = args.file_pred.strip("'")
-    if args.file_true is not None:
-        args.file_true = args.file_true.strip("'")
+    if args.npy_pred is not None:
+        args.npy_pred = args.npy_pred.strip("'")
+    if args.npy_true is not None:
+        args.npy_true = args.npy_true.strip("'")
+    if args.var_npy is not None:
+        args.var_npy = args.var_npy.strip("'")
     if args.out_file is not None:
         args.out_file = args.out_file.strip("'")
 
@@ -631,6 +402,13 @@ def parse_arguments():
         args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
     args.chrom = sorted(args.chrom)
 
+    if len(args.bootstrap_chrom) == 0:
+        args.bootstrap_chrom = [(-1, args.chrom)]
+    else:
+        for i, _ in enumerate(args.bootstrap_chrom):
+            args.bootstrap_chrom[i] = (i, args.bootstrap_chrom[i].split(','))
+    print(args.bootstrap_chrom)
+
     log.setLevel(args.log_level)
     log.info(sys.argv)
     return args
@@ -649,30 +427,61 @@ def read_annotation_bed(bed):
     return result
 
 
+def del_unused_chroms_from_dict(d, chroms):
+    """Remove reference to data for unused chroms from dict and
+    do GC
+    """
+    if d is None:
+        return
+    unused_chroms = set(d.keys()) - set(chroms)
+    for c in unused_chroms:
+        del d[c]
+
+    gc.collect()        
+    return
+
+
 def main():
     # read params
     args = parse_arguments()
 
-    if args.file_pred.endswith(('.npy', '.npz')):
+    gc.disable()
+
+    if args.npy_pred.endswith(('.npy', '.npz')):
         log.info('Opening prediction numpy array file...')
-        y_pred_dict = numpy.load(args.file_pred, allow_pickle=True)[()]
-    elif args.file_pred.lower().endswith(('.bw','.bigwig')):
+        y_pred_dict = numpy.load(args.npy_pred, allow_pickle=True)[()]
+    elif args.npy_pred.lower().endswith(('.bw','.bigwig')):
         log.info('Opening prediction bigwig file...')
-        bw_pred = pyBigWig.open(args.file_pred)
+        bw_pred = pyBigWig.open(args.npy_pred)
         y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size,
             args.validated)
     else:
         raise NotImplementedError('Unsupported file type')
 
-    if args.file_true.endswith(('.npy', '.npz')):
+    # free unused chroms from memory (GC)
+    del_unused_chroms_from_dict(y_pred_dict, args.chrom)
+
+    if args.npy_true.endswith(('.npy', '.npz')):
         log.info('Opening truth numpy array file...')
-        y_true_dict = numpy.load(args.file_true, allow_pickle=True)[()]
-    elif args.file_true.lower().endswith(('.bw','.bigwig')):
+        y_true_dict = numpy.load(args.npy_true, allow_pickle=True)[()]
+    elif args.npy_true.lower().endswith(('.bw','.bigwig')):
         log.info('Opening truth bigwig file...')
-        bw_true = pyBigWig.open(args.file_true)
+        bw_true = pyBigWig.open(args.npy_true)
         y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
     else:
         raise NotImplementedError('Unsupported file type')
+
+    del_unused_chroms_from_dict(y_true_dict, args.chrom)
+
+    if args.var_npy is None:
+        y_var_true_dict = None
+    elif args.var_npy.endswith(('.npy', '.npz')):
+        log.info('Opening truth var numpy array file...')
+        y_var_true_dict = numpy.load(args.var_npy, allow_pickle=True)[()]
+    else:
+        raise ValueError('Var true file should be a binned .npy or .npz.')
+
+    del_unused_chroms_from_dict(y_var_true_dict, args.chrom)
 
     log.info('Reading from enh_annotations...')
     enh_annotations = read_annotation_bed(args.enh_annotations)
@@ -680,30 +489,16 @@ def main():
     log.info('Reading from gene_annotations...')
     gene_annotations = read_annotation_bed(args.gene_annotations)
 
-    if args.bootstrapped_label_npy is not None:
-        log.info('Reading bootstrapped labels .npy...')
-        bootstrapped_labels = numpy.load(args.bootstrapped_label_npy,
-                                         allow_pickle=True)
-    else:
-        bootstrapped_labels = [None]
-
     with open(args.out_file, 'w') as fp:
-        for k, label in enumerate(bootstrapped_labels):
+        for k, bootstrap_chrom in args.bootstrap_chrom:
+            log.info('Calculating score for bootstrap {} case...'.format(k))
 
-            if label is None:
-                bootstrap = 'no_bootstrap'
-                bootstrap_id = -1
-            else:
-                bootstrap = 'bootstrap-{}'.format(k)
-                bootstrap_id = k
-            log.info('Calculating score for {} case...'.format(bootstrap))
-
-            score_output = score(y_pred_dict, y_true_dict, args.chrom,
+            score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
                            gene_annotations, enh_annotations,
                            args.window_size, args.prom_loc,
-                           label)
+                           y_var_true_dict)
             # write to TSV
-            s = "\t".join([bootstrap]+[str(o) for o in score_output])
+            s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
             fp.write(s+'\n')
             print(s)
 
@@ -712,13 +507,13 @@ def main():
                 score_db_record = ScoreDBRecord(
                     args.submission_id,
                     args.team_id,
-                    os.path.basename(args.file_pred),
+                    os.path.basename(args.npy_pred),
                     args.cell,
                     args.assay,
-                    bootstrap_id,
-                    ','.join(sorted(args.chrom)),
+                    k,
                     *score_output)
                 write_to_db(score_db_record, args.out_db_file)
+            gc.collect()
 
     log.info('All done')
 

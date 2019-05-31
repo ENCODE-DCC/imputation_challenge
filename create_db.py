@@ -9,7 +9,7 @@ import sys
 import argparse
 import sqlite3
 import logging
-import score
+from score import DB_TABLE_SCORE, ScoreDBRecord
 
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
@@ -17,26 +17,22 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-SCORE_DB_RECORD_VAR_TYPE = score.ScoreDBRecord(    
+SCORE_DB_RECORD_VAR_TYPE = ScoreDBRecord(
     submission_id='integer NOT NULL',
     team_id='integer NOT NULL',
     submission_fname='text NOT NULL',
     cell='text NOT NULL',
     assay='text NOT NULL',
     bootstrap_id='integer NOT NULL',
-    chroms='text NOT NULL',
     mse='double NOT NULL',
-    mse1obs='double NOT NULL',
-    mse1imp='double NOT NULL',
     gwcorr='double NOT NULL',
-    match1='integer NOT NULL',
-    catch1obs='integer NOT NULL',
-    catch1imp='integer NOT NULL',
-    aucobs1='double NOT NULL',
-    aucimp1='double NOT NULL',
+    gwspear='double NOT NULL',
     mseprom='double NOT NULL',
     msegene='double NOT NULL',
-    mseenh='double NOT NULL'
+    mseenh='double NOT NULL',
+    msevar='double NOT NULL',
+    mse1obs='double NOT NULL',
+    mse1imp='double NOT NULL'
 )
 
 
@@ -72,7 +68,7 @@ def main():
         conn = sqlite3.connect(args.db_file)
         c = conn.cursor()
         c.execute('CREATE TABLE IF NOT EXISTS {} ({});'.format(
-            score.DB_TABLE_SCORE,
+            DB_TABLE_SCORE,
             ','.join([attr + ' ' + getattr(SCORE_DB_RECORD_VAR_TYPE, attr)
                         for attr in SCORE_DB_RECORD_VAR_TYPE._fields])))
     except Exception as e:
