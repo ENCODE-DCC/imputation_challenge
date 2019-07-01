@@ -224,7 +224,7 @@ def build_npy_from_bigwig(filename, chroms, window_size,
 
     bfilt_y_array = dict_to_arr(bfilt_y_dict, chroms)
     robust_min, robust_max = find_robust_min_max(bfilt_y_array)
-    log.info('Robust min, max: ', robust_min, robust_max)
+    log.info('Robust min, max: {}, {}'.format(robust_min, robust_max))
     bfilt_y_dict['robust_min'] = robust_min
     bfilt_y_dict['robust_max'] = robust_max
 

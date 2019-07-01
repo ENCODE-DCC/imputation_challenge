@@ -13,6 +13,7 @@ import gzip
 import sqlite3
 import time
 import gc
+import synapse
 from collections import namedtuple
 from sklearn.metrics import roc_auc_score
 from scipy.stats import norm, spearmanr
@@ -304,10 +305,13 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         prog='ENCODE Imputation Challenge scoring script. .npy or .npz must be built '
              'with a correct --window-size. i.e. containing a value for each bin')
-    parser.add_argument('npy_pred',
-                        help='Submission .npy file to be scored')
+    parser.add_argument('npy_pred_or_syn_eval_queue',
+                        help='Submission .npy file to be scored OR Synapse evaluation queue')
     parser.add_argument('npy_true',
                         help='Truth .npy file')
+    p_score.add_argument('--download-submissions-from-syn-eval-queue', action='store_true',
+                         help='Download RECEIVED submissions from Synapse '
+                              'evaluation queue.')
     parser.add_argument('--var-npy',
                         help='Truth .npy file filled with a variance for each bin '
                         'instead of a raw signal value. '
@@ -389,8 +393,8 @@ def parse_arguments():
     args = parser.parse_args()
 
     # some submission files have whitespace in path...
-    if args.npy_pred is not None:
-        args.npy_pred = args.npy_pred.strip("'")
+    if args.npy_pred_or_syn_eval_queue is not None:
+        args.npy_pred_or_syn_eval_queue = args.npy_pred_or_syn_eval_queue.strip("'")
     if args.npy_true is not None:
         args.npy_true = args.npy_true.strip("'")
     if args.var_npy is not None:
@@ -434,15 +438,19 @@ def parse_arguments():
     return args
 
 
+def download_submissions_from_syn_eval_queue(syn, syn_eval_queue):
+    result = []
+    return result
+
+
 def main():
     # read params
     args = parse_arguments()
 
-    gc.disable()
+    if args.download_submissions_from_syn_eval_queue:
+        syn = synapseclient.login()
 
-    y_pred_dict = build_npy_from_bigwig(args.npy_pred, args.chrom,
-                                        args.window_size, args.blacklist_file,
-                                        args.validated)
+    gc.disable()
 
     y_true_dict = build_npy_from_bigwig(args.npy_true, args.chrom,
                                         args.window_size, args.blacklist_file)
@@ -462,30 +470,45 @@ def main():
     gene_annotations = read_annotation_bed(args.gene_annotations)
 
     with open(args.out_file, 'w') as fp:
-        for k, bootstrap_chrom in args.bootstrap_chrom:
-            log.info('Calculating score for bootstrap {} case...'.format(k))
 
-            score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
-                           gene_annotations, enh_annotations,
-                           args.window_size, args.prom_loc,
-                           y_var_true_dict)
-            # write to TSV
-            s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
-            fp.write(s+'\n')
-            print(s)
+        if args.download_submissions_from_syn_eval_queue:
+            bws = download_submissions_from_syn_eval_queue(
+                syn, args.npy_pred_or_syn_eval_queue)
+        else:
+            bws = [args.npy_pred_or_syn_eval_queue]
 
-            # write to DB
-            if args.out_db_file is not None:
-                score_db_record = ScoreDBRecord(
-                    args.submission_id,
-                    args.team_id,
-                    os.path.basename(args.npy_pred),
-                    args.cell,
-                    args.assay,
-                    k,
-                    *score_output)
-                write_to_db(score_db_record, args.out_db_file)
-            gc.collect()
+        for bw in bws:
+            log.info('Calculating score for submission {}...'.format(bw))
+            y_pred_dict = build_npy_from_bigwig(bw,
+                                                args.chrom,
+                                                args.window_size,
+                                                args.blacklist_file,
+                                                args.validated)
+
+            for k, bootstrap_chrom in args.bootstrap_chrom:
+                log.info('Calculating score for bootstrap {} case...'.format(k))
+
+                score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
+                               gene_annotations, enh_annotations,
+                               args.window_size, args.prom_loc,
+                               y_var_true_dict)
+                # write to TSV
+                s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
+                fp.write(s+'\n')
+                print(s)
+
+                # write to DB
+                if args.out_db_file is not None:
+                    score_db_record = ScoreDBRecord(
+                        args.submission_id,
+                        args.team_id,
+                        os.path.basename(bw),
+                        args.cell,
+                        args.assay,
+                        k,
+                        *score_output)
+                    write_to_db(score_db_record, args.out_db_file)
+                gc.collect()
 
     log.info('All done')
 
