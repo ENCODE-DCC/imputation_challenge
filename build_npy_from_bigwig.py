@@ -10,7 +10,7 @@ import argparse
 import numpy
 import pyBigWig
 import logging
-from score import read_annotation_bed
+from score import read_annotation_bed, dict_to_arr
 
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
@@ -50,6 +50,8 @@ def parse_arguments():
                          help='For validated submissions '
                               'with fixed interval length of 25 and valid '
                               'chromosome lengths. It will skip interpolation')
+    p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
+                         help='Normalize with robust min max.')
     parser.add_argument('--log-level', default='INFO',
                         choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
                                  'CRITICAL', 'ERROR', 'CRITICAL'],
@@ -171,6 +173,11 @@ def get_blacklist_bin_ids(blacklist, chroms, window_size=25):
 
     return result
 
+def find_robust_min_max():
+    idxs = numpy.argsort(x)
+    robust_max = x[idxs[int(-50000*0.05)]]
+    robust_min = x[idxs[int(50000*0.05)]]
+    return robust_min, robust_max
 
 def main():
     # read params
@@ -192,6 +199,16 @@ def main():
         blacklist_bin_ids = get_blacklist_bin_ids(
             blacklist_lines, args.chrom, args.window_size)
         bfilt_y_dict = blacklist_filter(y_dict, blacklist_bin_ids)
+
+    # normalize with robust min max
+    if args.normalize_with_robust_min_max:
+        bfilt_y_vector = dict_to_arr(bfilt_y_dict, args.chrom)
+        robust_min, robust_max = find_robust_min_max(bfilt_y_vector)
+        log.info("Robust min, max : ", robust_min, robust_max)
+        for c in bfilt_y_dict:
+            log.info("Before norm: ", c, bfilt_y_dict[c][0])
+            bfilt_y_dict[c] = (bfilt_y_dict[c] - robust_min) / robust_max
+            log.info("After norm: ", c, bfilt_y_dict[c][0])
 
     log.info('Writing to npy or npz...')
     if args.out_npy_prefix is None:
