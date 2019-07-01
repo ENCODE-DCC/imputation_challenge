@@ -41,6 +41,7 @@ ScoreDBRecord = namedtuple(
 DB_TABLE_SCORE = 'score'
 DB_QUERY_INSERT = 'INSERT INTO {table} ({cols}) VALUES ({values});'
 
+PERIOD_SCORE_SUBMISSION = 1800  # check submissions every 15 min
 
 def mse(y_true, y_pred):
     return ((y_true - y_pred) ** 2.).mean()
@@ -438,15 +439,23 @@ def parse_arguments():
 
 
 def download_submissions_from_syn_eval_queue(syn, syn_eval_queue):
-    result = []
-    return result
+    bws = []
+    try:
+        pass
+    except:
+        log.error('Failed to download submissions from syn eval queue {}'.format(
+            syn_eval_queue))
+
+    return bws
 
 
 def main():
     # read params
     args = parse_arguments()
 
-    if args.download_submissions_from_syn_eval_queue:
+    use_syn = args.download_submissions_from_syn_eval_queue
+
+    if use_syn:
         syn = synapseclient.login()
 
     gc.disable()
@@ -470,44 +479,55 @@ def main():
 
     with open(args.out_file, 'w') as fp:
 
-        if args.download_submissions_from_syn_eval_queue:
-            bws = download_submissions_from_syn_eval_queue(
-                syn, args.npy_pred_or_syn_eval_queue)
-        else:
-            bws = [args.npy_pred_or_syn_eval_queue]
+        while True:
+            if use_syn:
+                bws = download_submissions_from_syn_eval_queue(
+                    syn, args.npy_pred_or_syn_eval_queue)
+            else:
+                bws = [args.npy_pred_or_syn_eval_queue]
 
-        for bw in bws:
-            log.info('Calculating score for submission {}...'.format(bw))
-            y_pred_dict = build_npy_from_bigwig(bw,
-                                                args.chrom,
-                                                args.window_size,
-                                                args.blacklist_file,
-                                                args.validated)
+            for bw in bws:
+                try:
+                    log.info('Calculating score for submission {}...'.format(bw))
+                    y_pred_dict = build_npy_from_bigwig(bw,
+                                                        args.chrom,
+                                                        args.window_size,
+                                                        args.blacklist_file,
+                                                        args.validated)
 
-            for k, bootstrap_chrom in args.bootstrap_chrom:
-                log.info('Calculating score for bootstrap {} case...'.format(k))
+                    for k, bootstrap_chrom in args.bootstrap_chrom:
+                        log.info('Calculating score for bootstrap {} case...'.format(k))
 
-                score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
-                               gene_annotations, enh_annotations,
-                               args.window_size, args.prom_loc,
-                               y_var_true_dict)
-                # write to TSV
-                s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
-                fp.write(s+'\n')
-                print(s)
+                        score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
+                                       gene_annotations, enh_annotations,
+                                       args.window_size, args.prom_loc,
+                                       y_var_true_dict)
+                        # write to TSV
+                        s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
+                        fp.write(s+'\n')
+                        print(s)
 
-                # write to DB
-                if args.out_db_file is not None:
-                    score_db_record = ScoreDBRecord(
-                        args.submission_id,
-                        args.team_id,
-                        os.path.basename(bw),
-                        args.cell,
-                        args.assay,
-                        k,
-                        *score_output)
-                    write_to_db(score_db_record, args.out_db_file)
-                gc.collect()
+                        # write to DB
+                        if args.out_db_file is not None:
+                            score_db_record = ScoreDBRecord(
+                                args.submission_id,
+                                args.team_id,
+                                os.path.basename(bw),
+                                args.cell,
+                                args.assay,
+                                k,
+                                *score_output)
+                            write_to_db(score_db_record, args.out_db_file)
+                        gc.collect()
+                except:
+                    log.error('Failed to score submission {}'.format(bw))
+
+            if use_syn:
+                log.info('Waiting for {} secs to check new submissions on '
+                         'syn eval queue'.format(PERIOD_SCORE_SUBMISSION))
+                time.sleep(PERIOD_SCORE_SUBMISSION)
+            else:
+                break
 
     log.info('All done')
 
