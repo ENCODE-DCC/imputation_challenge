@@ -206,7 +206,7 @@ def build_npy_from_bigwig(filename, chroms, window_size,
         log.info('Opening bigwig file...')
         bw = pyBigWig.open(filename)
         y_dict = bw_to_dict(bw, chroms, window_size,
-                            args.validated)
+                            validated)
     elif filename.lower().endswith(('npy', 'npz')):
         y_dict = numpy.load(filename, allow_pickle=True)[()]
         return y_dict
