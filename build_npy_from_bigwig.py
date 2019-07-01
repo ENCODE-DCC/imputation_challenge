@@ -10,7 +10,6 @@ import argparse
 import numpy
 import pyBigWig
 import logging
-from score import read_annotation_bed, dict_to_arr
 
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
@@ -50,8 +49,6 @@ def parse_arguments():
                          help='For validated submissions '
                               'with fixed interval length of 25 and valid '
                               'chromosome lengths. It will skip interpolation')
-    p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
-                         help='Normalize with robust min max.')
     parser.add_argument('--log-level', default='INFO',
                         choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
                                  'CRITICAL', 'ERROR', 'CRITICAL'],
@@ -66,6 +63,19 @@ def parse_arguments():
     log.setLevel(args.log_level)
     log.info(sys.argv)
     return args
+
+
+def read_annotation_bed(bed):
+    result = []
+    if bed.endswith('gz'):
+        with gzip.open(bed, 'r') as infile:
+            for line in infile:
+                result.append(line.decode("ascii"))
+    else:
+        with open(bed, 'r') as infile:
+            for line in infile:
+                result.append(line)
+    return result
 
 
 def bw_to_dict(bw, chrs, window_size=25, validated=False):
@@ -173,42 +183,60 @@ def get_blacklist_bin_ids(blacklist, chroms, window_size=25):
 
     return result
 
-def find_robust_min_max():
+
+def dict_to_arr(d, chroms):
+    """Concat vectors in d
+    """
+    result = []
+    for c in chroms:
+        result.extend(d[c])
+    return numpy.array(result)
+
+
+def find_robust_min_max(x):
     idxs = numpy.argsort(x)
     robust_max = x[idxs[int(-50000*0.05)]]
     robust_min = x[idxs[int(50000*0.05)]]
     return robust_min, robust_max
 
+
+def build_npy_from_bigwig(filename, chroms, window_size,
+                          blacklist_file=None, validated=False):
+    if filename.lower().endswith(('bw', 'bigwig')):
+        log.info('Opening bigwig file...')
+        bw = pyBigWig.open(filename)
+        y_dict = bw_to_dict(bw, chroms, window_size,
+                            args.validated)
+    elif filename.lower().endswith(('npy', 'npz')):
+        y_dict = numpy.load(filename, allow_pickle=True)[()]
+        return y_dict
+    else:
+        raise NotImplementedError('Unsupported file type')
+
+    if blacklist_file is None:
+        bfilt_y_dict = y_dict
+    else:
+        log.info('Reading from blacklist bed file...')
+        blacklist_lines = read_annotation_bed(blacklist_file)
+        blacklist_bin_ids = get_blacklist_bin_ids(
+            blacklist_lines, chroms, window_size)
+        bfilt_y_dict = blacklist_filter(y_dict, blacklist_bin_ids)
+
+    bfilt_y_array = dict_to_arr(bfilt_y_dict, chroms)
+    robust_min, robust_max = find_robust_min_max(bfilt_y_array)
+    log.info('Robust min, max: ', robust_min, robust_max)
+    bfilt_y_dict['robust_min'] = robust_min
+    bfilt_y_dict['robust_max'] = robust_max
+
+    return bfilt_y_dict
+
+
 def main():
     # read params
     args = parse_arguments()
 
-    if args.bw.lower().endswith(('bw', 'bigwig')):
-        log.info('Opening bigwig file...')
-        bw = pyBigWig.open(args.bw)
-        y_dict = bw_to_dict(bw, args.chrom, args.window_size,
-                            args.validated)
-    elif args.bw.lower().endswith(('npy', 'npz')):
-        y_dict = numpy.load(args.bw, allow_pickle=True)[()]
-
-    if args.blacklist_file is None:
-        bfilt_y_dict = y_dict
-    else:
-        log.info('Reading from blacklist bed file...')
-        blacklist_lines = read_annotation_bed(args.blacklist_file)
-        blacklist_bin_ids = get_blacklist_bin_ids(
-            blacklist_lines, args.chrom, args.window_size)
-        bfilt_y_dict = blacklist_filter(y_dict, blacklist_bin_ids)
-
-    # normalize with robust min max
-    if args.normalize_with_robust_min_max:
-        bfilt_y_vector = dict_to_arr(bfilt_y_dict, args.chrom)
-        robust_min, robust_max = find_robust_min_max(bfilt_y_vector)
-        log.info("Robust min, max : ", robust_min, robust_max)
-        for c in bfilt_y_dict:
-            log.info("Before norm: ", c, bfilt_y_dict[c][0])
-            bfilt_y_dict[c] = (bfilt_y_dict[c] - robust_min) / robust_max
-            log.info("After norm: ", c, bfilt_y_dict[c][0])
+    bfilt_y_dict = build_npy_from_bigwig(args.bw, args.chrom,
+                                         args.window_size, args.blacklist_file)
 
     log.info('Writing to npy or npz...')
     if args.out_npy_prefix is None:

@@ -8,7 +8,6 @@ import sys
 import argparse
 import numpy
 import pyBigWig
-from score import bw_to_dict
 import logging
 
 logging.basicConfig(
@@ -65,8 +64,10 @@ def main():
     for f in args.npy:
         log.info('Reading from {}...'.format(f))
         y_dict = numpy.load(f, allow_pickle=True)[()]
+        robust_min = y_dict['robust_min']
+        robust_max = y_dict['robust_max']
         for c in args.chrom:
-            y_all[c].append(y_dict[c])
+            y_all[c].append((y_dict[c] - robust_min) / robust_max)
 
     var = {}
     for c in args.chrom:

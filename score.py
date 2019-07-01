@@ -18,6 +18,8 @@ from sklearn.metrics import roc_auc_score
 from scipy.stats import norm, spearmanr
 import logging
 
+from .build_npy_from_bigwig import read_annotation_bed, bw_to_dict, dict_to_arr
+
 logging.basicConfig(
     format='[%(asctime)s %(levelname)s] %(message)s',
     stream=sys.stdout)
@@ -199,6 +201,17 @@ def mse1imp(y_true, y_pred):
     return mse(y_true[idx], y_pred[idx])
 
 
+def normalize_dict(y_dict, chroms):
+    robust_min = y_dict['robust_min']
+    robust_max = y_dict['robust_max']
+
+    y_dict_norm = {}
+    for c in chroms:
+        y_dict_norm[c] = (y_dict[c] - robust_min) / robust_max
+
+    return y_dict_norm
+
+
 def score(y_pred_dict, y_true_dict, chroms,
           gene_annotations, enh_annotations,
           window_size=25, prom_loc=80,
@@ -218,40 +231,38 @@ def score(y_pred_dict, y_true_dict, chroms,
             random seed.
     """
     # concat all chromosomes
+    y_pred_dict_norm = normalize_dict(y_pred_dict, chroms)
+    y_true_dict_norm = normalize_dict(y_true_dict, chroms)
+
     y_pred = dict_to_arr(y_pred_dict, chroms)
     y_true = dict_to_arr(y_true_dict, chroms)
+
+    y_pred_norm = dict_to_arr(y_pred_dict_norm, chroms)
+    y_true_norm = dict_to_arr(y_true_dict_norm, chroms)
+
     if y_var_true_dict is None:
         y_var_true = None
     else:
         y_var_true = dict_to_arr(y_var_true_dict, chroms)
 
     output = Score(
-        mse=mse(y_true, y_pred),
+        mse=mse(y_true_norm, y_pred_norm),
         gwcorr=gwcorr(y_true, y_pred),
         gwspear=gwspear(y_true, y_pred),
-        mseprom=mseprom(y_true_dict, y_pred_dict, chroms,
+        mseprom=mseprom(y_true_dict_norm, y_pred_dict_norm, chroms,
                         gene_annotations,
                         window_size, prom_loc),
-        msegene=msegene(y_true_dict, y_pred_dict, chroms,
+        msegene=msegene(y_true_dict_norm, y_pred_dict_norm, chroms,
                         gene_annotations,
                         window_size),
-        mseenh=mseenh(y_true_dict, y_pred_dict, chroms,
+        mseenh=mseenh(y_true_dict_norm, y_pred_dict_norm, chroms,
                       enh_annotations,
                       window_size),
-        msevar=msevar(y_true, y_pred, var=y_var_true),
-        mse1obs=mse1obs(y_true, y_pred),
-        mse1imp=mse1imp(y_true, y_pred),
+        msevar=msevar(y_true_norm, y_pred_norm, var=y_var_true),
+        mse1obs=mse1obs(y_true_norm, y_pred_norm),
+        mse1imp=mse1imp(y_true_norm, y_pred_norm),
     )
     return output
-
-
-def dict_to_arr(d, chroms):
-    """Concat vectors in d
-    """
-    result = []
-    for c in chroms:
-        result.extend(d[c])
-    return numpy.array(result)
 
 
 def write_to_db(score_db_record, db_file):
@@ -332,6 +343,13 @@ def parse_arguments():
                             py_path,
                             'annot/hg38/F5.hg38.enhancers.bed.gz'),
                          help='Enhancer annotations BED file ')
+    p_score.add_argument('--blacklist-file',
+                         default=os.path.join(
+                            py_path,
+                            'annot/hg38/hg38.blacklist.bed.gz'),
+                         help='Blacklist BED file. Bootstrap label will be '
+                              'generated after removing overlapping regions '
+                              'defined in this file.')
     p_score.add_argument('--window-size', default=25, type=int,
                          help='Window size for bigwig in bp')
     p_score.add_argument('--prom-loc', default=80, type=int,
@@ -344,6 +362,8 @@ def parse_arguments():
                               'For truth bigwigs, it is recommended to convert '
                               'them into npy\'s or npz\'s by using '
                               'build_npy_from_bigwig.py')
+    p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
+                         help='Normalize with robust min max.')
     p_out = parser.add_argument_group(
                         title='Output to file (TSV or DB)')
     p_out.add_argument('--out-file', default='output.tsv',
@@ -414,64 +434,18 @@ def parse_arguments():
     return args
 
 
-def read_annotation_bed(bed):
-    result = []
-    if bed.endswith('gz'):
-        with gzip.open(bed, 'r') as infile:
-            for line in infile:
-                result.append(line.decode("ascii"))
-    else:
-        with open(bed, 'r') as infile:
-            for line in infile:
-                result.append(line)
-    return result
-
-
-def del_unused_chroms_from_dict(d, chroms):
-    """Remove reference to data for unused chroms from dict and
-    do GC
-    """
-    if d is None:
-        return
-    unused_chroms = set(d.keys()) - set(chroms)
-    for c in unused_chroms:
-        del d[c]
-
-    gc.collect()        
-    return
-
-
 def main():
     # read params
     args = parse_arguments()
 
     gc.disable()
 
-    if args.npy_pred.endswith(('.npy', '.npz')):
-        log.info('Opening prediction numpy array file...')
-        y_pred_dict = numpy.load(args.npy_pred, allow_pickle=True)[()]
-    elif args.npy_pred.lower().endswith(('.bw','.bigwig')):
-        log.info('Opening prediction bigwig file...')
-        bw_pred = pyBigWig.open(args.npy_pred)
-        y_pred_dict = bw_to_dict(bw_pred, args.chrom, args.window_size,
-            args.validated)
-    else:
-        raise NotImplementedError('Unsupported file type')
+    y_pred_dict = build_npy_from_bigwig(args.npy_pred, args.chrom,
+                                        args.window_size, args.blacklist_file,
+                                        args.validated)
 
-    # free unused chroms from memory (GC)
-    del_unused_chroms_from_dict(y_pred_dict, args.chrom)
-
-    if args.npy_true.endswith(('.npy', '.npz')):
-        log.info('Opening truth numpy array file...')
-        y_true_dict = numpy.load(args.npy_true, allow_pickle=True)[()]
-    elif args.npy_true.lower().endswith(('.bw','.bigwig')):
-        log.info('Opening truth bigwig file...')
-        bw_true = pyBigWig.open(args.npy_true)
-        y_true_dict = bw_to_dict(bw_true, args.chrom, args.window_size)
-    else:
-        raise NotImplementedError('Unsupported file type')
-
-    del_unused_chroms_from_dict(y_true_dict, args.chrom)
+    y_true_dict = build_npy_from_bigwig(args.npy_true, args.chrom,
+                                        args.window_size, args.blacklist_file)
 
     if args.var_npy is None:
         y_var_true_dict = None
@@ -480,8 +454,6 @@ def main():
         y_var_true_dict = numpy.load(args.var_npy, allow_pickle=True)[()]
     else:
         raise ValueError('Var true file should be a binned .npy or .npz.')
-
-    del_unused_chroms_from_dict(y_var_true_dict, args.chrom)
 
     log.info('Reading from enh_annotations...')
     enh_annotations = read_annotation_bed(args.enh_annotations)
