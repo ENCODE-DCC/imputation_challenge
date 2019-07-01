@@ -8,6 +8,7 @@ import sys
 import os
 import argparse
 import numpy
+import gzip
 import pyBigWig
 import logging
 

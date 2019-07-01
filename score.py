@@ -9,7 +9,6 @@ import argparse
 import numpy
 import pyBigWig
 import os
-import gzip
 import sqlite3
 import time
 import gc
