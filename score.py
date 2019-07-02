@@ -208,7 +208,10 @@ def normalize_dict(y_dict, chroms):
 
     y_dict_norm = {}
     for c in chroms:
-        y_dict_norm[c] = (y_dict[c] - robust_min) / robust_max
+        y = numpy.array(y_dict[c])
+        y[y <= robust_min] = robust_min
+        y[y >= robust_max] = robust_max
+        y_dict_norm[c] = (y - robust_min) / robust_max
 
     return y_dict_norm
 

@@ -194,10 +194,16 @@ def dict_to_arr(d, chroms):
     return numpy.array(result)
 
 
-def find_robust_min_max(x):
-    idxs = numpy.argsort(x)
-    robust_max = x[idxs[int(-50000*0.05)]]
-    robust_min = x[idxs[int(50000*0.05)]]
+def find_robust_min_max(x, pct_thresh=0.05, top_bottom_bin_range=2000000):
+    y = x[x > 0]
+    idxs = numpy.argsort(y)
+    abs_max = y[idxs[-1]]
+    abs_min = y[idxs[0]]
+    robust_max = y[idxs[-int(pct_thresh * top_bottom_bin_range)]]
+    robust_min = y[idxs[int(pct_thresh * top_bottom_bin_range)]]
+    log.info('Array length original, non-zero: {}, {}'.format(len(x), len(y)))
+    log.info('Absolute min, max: {}, {}'.format(abs_min, abs_max))
+    log.info('Robust min, max: {}, {}'.format(robust_min, robust_max))
     return robust_min, robust_max
 
 
@@ -225,7 +231,6 @@ def build_npy_from_bigwig(filename, chroms, window_size,
 
     bfilt_y_array = dict_to_arr(bfilt_y_dict, chroms)
     robust_min, robust_max = find_robust_min_max(bfilt_y_array)
-    log.info('Robust min, max: {}, {}'.format(robust_min, robust_max))
     bfilt_y_dict['robust_min'] = robust_min
     bfilt_y_dict['robust_max'] = robust_max
 
