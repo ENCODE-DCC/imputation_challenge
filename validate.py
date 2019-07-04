@@ -1,50 +1,21 @@
-# Imputed track evaluations
-# Author: Jacob Schreiber, Jin Lee
-# Contact: jmschreiber91@gmail.com, leepc12@gmail.com
+#!/usr/bin/env python3
+"""Imputation challenge submission bigwig validator
 
-import sys
-import argparse
+Author:
+    Jin Lee (leepc12@gmail.com)
+"""
+
 import pyBigWig
 import json
-import logging
 import traceback
-
-logging.basicConfig(
-    format='[%(asctime)s %(levelname)s] %(message)s',
-    stream=sys.stdout)
-log = logging.getLogger(__name__)
-
-# cat hg38.chrom.sizes | grep -P "chr[\dX]" | grep -v _
-CHRSZ = {
-    'chr1': 248956422,
-    'chr10': 133797422,
-    'chr11': 135086622,
-    'chr12': 133275309,
-    'chr13': 114364328,
-    'chr14': 107043718,
-    'chr15': 101991189,
-    'chr16': 90338345,
-    'chr17': 83257441,
-    'chr18': 80373285,
-    'chr19': 58617616,
-    'chr2': 242193529,
-    'chr20': 64444167,
-    'chr21': 46709983,
-    'chr22': 50818468,
-    'chr3': 198295559,
-    'chr4': 190214555,
-    'chr5': 181538259,
-    'chr6': 170805979,
-    'chr7': 159345973,
-    'chr8': 145138636,
-    'chr9': 138394717,
-    'chrX': 156040895
-}
-
-WINDOW_SIZE = 25
+from logger import log
+from challenge_metadata import CHRSZ
 
 
-def validate(bw):
+def validate(bw_file, window_size=25):
+    log.info('Opening bigwig file...')
+    bw = pyBigWig.open(bw_file.strip("'"))
+
     try:
         valid = True
         # print chrsz
@@ -79,7 +50,7 @@ def validate(bw):
             for start, end, v in bw.intervals(c):
                 if end == s:
                     continue
-                if end-start != WINDOW_SIZE:
+                if end-start != window_size:
                     print('Invalid window size for chromosome {}. '
                           'start: {}, end: {}, value: {}'.format(
                             c, start, end, v))
@@ -96,18 +67,14 @@ def validate(bw):
         return 1
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(prog='ENCODE Imputation Challenge'
+    import argparse
+    parser = argparse.ArgumentParser(description='ENCODE Imputation Challenge'
                                           'validation script.')
     parser.add_argument('bw', type=str,
                         help='Bigwig file to be validated.')
-    parser.add_argument('--log-level', default='INFO',
-                        choices=['NOTSET', 'DEBUG', 'INFO', 'WARNING',
-                                 'CRITICAL', 'ERROR', 'CRITICAL'],
-                        help='Log level')
+    parser.add_argument('--window-size', default=25, type=int,
+                         help='Window size for bigwig in bp')
     args = parser.parse_args()
-
-    log.setLevel(args.log_level)
-    log.info(sys.argv)
     return args
 
 
@@ -115,10 +82,7 @@ def main():
     # read params
     args = parse_arguments()
 
-    log.info('Opening bigwig file...')
-    bw = pyBigWig.open(args.bw.strip("'"))
-
-    return validate(bw)
+    return validate(args.bw, args.window_size)
 
 
 if __name__ == '__main__':
