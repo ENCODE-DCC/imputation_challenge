@@ -141,8 +141,8 @@ def parse_arguments():
                               'For truth bigwigs, it is recommended to convert '
                               'them into npy\'s or npz\'s by using '
                               'bw_to_npy.py')
-    p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
-                         help='Normalize with robust min max.')
+    #p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
+    #                     help='Normalize with robust min max.')
     p_out = parser.add_argument_group(
                         title='Output to file (TSV or DB)')
     p_out.add_argument('--out-file', default='output.tsv',

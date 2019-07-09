@@ -205,14 +205,13 @@ def find_robust_min_max(x, pct_thresh=0.05, top_bottom_bin_range=2000000):
 
 
 def normalize_dict(y_dict, chroms):
-    robust_min = y_dict['robust_min']
-    robust_max = y_dict['robust_max']
-
-    y_dict_norm = {}
-    for c in chroms:
-        y = numpy.array(y_dict[c])
-        y[y <= robust_min] = robust_min
-        y[y >= robust_max] = robust_max
-        y_dict_norm[c] = (y - robust_min) / robust_max
-
-    return y_dict_norm
+    #robust_min = y_dict['robust_min']
+    #robust_max = y_dict['robust_max']
+    #y_dict_norm = {}
+    #for c in chroms:
+    #    y = numpy.array(y_dict[c])
+    #    y[y <= robust_min] = robust_min
+    #    y[y >= robust_max] = robust_max
+    #    y_dict_norm[c] = (y - robust_min) / robust_max
+    #return y_dict_norm
+    return y_dict
