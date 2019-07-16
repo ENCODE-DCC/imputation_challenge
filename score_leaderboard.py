@@ -13,6 +13,7 @@ from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
 from rank import calc_global_ranks
 from db import write_to_db, ScoreDBRecord, DB_QUERY_GET, read_scores_from_db
+from io import StringIO
 
 
 ADMINS = ['syn3345120', ]  # leepc12,
@@ -42,6 +43,7 @@ def send_message(syn, user_ids, subject, message):
         print("Message sent: ", unicode(response).encode('utf-8'))
     except Exception as ex0:
         print("Failed to send message:", ex0)
+        response = None
 
     return response
 
@@ -155,6 +157,7 @@ def parse_arguments():
 
 
 def main():
+    print('Parsing arguments...')
     args = parse_arguments()
 
     enh_annotations = load_bed(args.enh_annotations)
@@ -170,6 +173,7 @@ def main():
             evaluation = syn.getEvaluation(args.eval_queue_id)
 
             for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
+                print(submission, status)
                 status.status = "INVALID"
 
                 try:
@@ -178,6 +182,7 @@ def main():
                         os.path.abspath(args.submission_dir), submission.id)
                     mkdir_p(submission_dir)
 
+                    print('Downloading submission...')
                     submission = syn.getSubmission(
                         submission, 
                         downloadLocation=submission_dir, 
@@ -185,8 +190,12 @@ def main():
                     )
                     submission_fname = submission.filePath
                     cell, assay = parse_submission_filename(submission_fname)
+                    print('Downloading done {}, {}, {}, {}, {}'.format(
+                        submission_fname, submission.id,
+                        submission.teamId, cell, assay))
 
                     # read pred npy (submission)
+                    print('Converting to dict...')
                     y_pred_dict = bw_to_dict(submission_fname, args.chrom,
                                              args.window_size, args.blacklist_file)
                     # read truth npy
@@ -207,6 +216,7 @@ def main():
                     # score it for each bootstrap chroms
                     score_outputs = []
                     for k, bootstrap_chrom in args.bootstrap_chrom:
+                        print('Scoring... k={}'.format(k))
                         score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
                                              gene_annotations, enh_annotations,
                                              args.window_size, args.prom_loc,
@@ -224,7 +234,8 @@ def main():
                             write_to_db(score_db_record, args.db_file)
 
                         score_outputs.append((k, score_output))
-                        print("Scored:", submission.id, submission.teamId, k, score_output)
+                        print('Scored: {}, {}, {}, {}'.format(
+                            submission.id, submission.teamId, k, score_output))
 
                     status.status = "SCORED"
 
@@ -264,7 +275,7 @@ def main():
                 send_message(sym, [submission.userId], subject, message)
 
             # calculate ranks and update leaderboard wiki
-            log.info('Updating ranks...')
+            print('Updating ranks...')
             rows = read_scores_from_db(args.db_file, args.chrom)
             _, _, markdown = calc_global_ranks(
                 rows, args.measures_to_use, None, syn)
@@ -280,11 +291,11 @@ def main():
             subject = 'Server error:'
             send_message(syn, ADMINS, subject, message)
 
-        log.info('Waiting for {} secs to check new submissions on '
+        print('Waiting for {} secs to check new submissions on '
                  'syn eval queue'.format(args.period))
         time.sleep(args.period)
 
-    log.info('All done')
+    print('All done')
  
 
 if __name__ == '__main__':
