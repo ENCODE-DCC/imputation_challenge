@@ -4,24 +4,24 @@ Author:
     Jin Lee (leepc12@gmail.com)
 """
 
+import os
 import time
 import gc
 from logger import log
+from score_metrics import Score, normalize_dict
 from score_metrics import mse, mseprom, msegene, mseenh, msevar, mse1obs, mse1imp
 from score_metrics import gwcorr, gwspear
-from score_metrics import normalize_dict
 from db import write_to_db, ScoreDBRecord
 
 from bw_to_npy import load_bed, load_npy, bw_to_dict, dict_to_arr
 
 
-
 def parse_submission_filename(bw_file):
     """Filename should be CXXMYY.bigwig or CXXMYY.bw
     """
-    basename_wo_ext = os.bath.basename(os.path.splitext(bw_file)[0])
-    cell = basename_wo_ext[0:3]
-    assay = basename_wo_ext[3:6]
+    basename = os.path.basename(bw_file)
+    cell = basename[0:3]
+    assay = basename[3:6]
     return cell, assay
 
 
