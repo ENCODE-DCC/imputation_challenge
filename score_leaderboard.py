@@ -8,12 +8,13 @@ import time
 import gc
 import traceback
 import synapseclient
-from logger import log
 from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
 from rank import calc_global_ranks
 from db import write_to_db, ScoreDBRecord, DB_QUERY_GET, read_scores_from_db
 from io import StringIO
+import logging
+log = logging.getLogger(__name__)
 
 
 ADMINS = ['syn3345120', ]  # leepc12,

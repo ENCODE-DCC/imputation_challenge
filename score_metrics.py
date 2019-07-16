@@ -10,7 +10,9 @@ import numpy
 from collections import namedtuple
 from sklearn.metrics import roc_auc_score
 from scipy.stats import norm, spearmanr
-from logger import log
+import logging
+log = logging.getLogger(__name__)
+
 
 Score = namedtuple(
     'Score',

@@ -8,9 +8,10 @@ Author:
 import numpy
 from collections import namedtuple, defaultdict
 from scipy.stats import rankdata
-from logger import log
 from score_metrics import RANK_METHOD_FOR_EACH_METRIC
 from db import DB_QUERY_GET, read_scores_from_db
+import logging
+log = logging.getLogger(__name__)
 
 
 GlobalScore = namedtuple(
