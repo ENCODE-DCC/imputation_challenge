@@ -9,8 +9,7 @@ import numpy
 import pyBigWig
 from score_metric import normalize_dict
 from bw_to_npy import write_dict_to_npy, load_npy
-import logging
-log = logging.getLogger(__name__)
+from logger import log
 
 
 def build_var_dict(npys, chroms):

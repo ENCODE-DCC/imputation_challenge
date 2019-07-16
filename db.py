@@ -9,8 +9,7 @@ import sys
 import sqlite3
 from collections import namedtuple
 from score_metrics import Score
-import logging
-log = logging.getLogger(__name__)
+from logger import log
 
 
 ScoreDBRecord = namedtuple(

@@ -8,8 +8,7 @@ Author:
 import pyBigWig
 import json
 import traceback
-import logging
-log = logging.getLogger(__name__)
+from logger import log
 
 
 # cat hg38.chrom.sizes | grep -P "chr[\dX]" | grep -v _

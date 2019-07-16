@@ -12,8 +12,7 @@ from score_metrics import mse, mseprom, msegene, mseenh, msevar, mse1obs, mse1im
 from score_metrics import gwcorr, gwspear
 from db import write_to_db, ScoreDBRecord
 from bw_to_npy import load_bed, load_npy, bw_to_dict, dict_to_arr
-import logging
-log = logging.getLogger(__name__)
+from logger import log
 
 
 def parse_submission_filename(bw_file):

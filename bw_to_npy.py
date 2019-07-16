@@ -9,8 +9,7 @@ import numpy
 import gzip
 import pyBigWig
 from score_metrics import find_robust_min_max
-import logging
-log = logging.getLogger(__name__)
+from logger import log
 
 
 def load_bed(bed):
