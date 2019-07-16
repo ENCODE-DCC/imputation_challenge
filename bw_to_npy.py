@@ -46,7 +46,7 @@ def bw_to_dict(bw_file, chrs, window_size=25,
 
     elif bw_file.lower().endswith(('bw', 'bigwig')):
         log.info('Opening bigwig file...')
-        bw = pyBigWig.open(filename)
+        bw = pyBigWig.open(bw_file)
         y_dict = {}
         for c in chrs:
             log_msg = 'Reading chromosome {} from bigwig...'.format(c)
@@ -139,10 +139,10 @@ def bw_to_dict(bw_file, chrs, window_size=25,
         else:
             blacklist_lines = load_bed(blacklist_file)
             blacklist_bin_ids = get_blacklist_bin_ids(
-                blacklist_lines, chroms, window_size)
+                blacklist_lines, chrs, window_size)
             bfilt_y_dict = blacklist_filter(y_dict, blacklist_bin_ids)
 
-        bfilt_y_array = dict_to_arr(bfilt_y_dict, chroms)
+        bfilt_y_array = dict_to_arr(bfilt_y_dict, chrs)
         #robust_min, robust_max = find_robust_min_max(bfilt_y_array)
         #bfilt_y_dict['robust_min'] = robust_min
         #bfilt_y_dict['robust_max'] = robust_max
@@ -216,21 +216,22 @@ def parse_arguments():
 
 
 def main():
+    import os
+
     # read params
     args = parse_arguments()
 
-    bfilt_y_dict = build_npy_from_bw(args.bw, args.chrom,
-                                         args.window_size, args.blacklist_file)
+    bfilt_y_dict = bw_to_dict(args.bw, args.chrom,
+                              args.window_size, args.blacklist_file)
     if args.out_npy_prefix is None:
         npy_prefix, _ = os.path.splitext(args.bw)
     else:
         npy_prefix = args.out_npy_prefix
 
-    write_dict_to_npy(out_npy_prefix)
+    write_dict_to_npy(bfilt_y_dict, npy_prefix)
 
     log.info('All done')
 
 
 if __name__ == '__main__':
     main()
-

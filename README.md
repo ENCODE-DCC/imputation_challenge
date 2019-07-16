@@ -1,4 +1,4 @@
-# ENCODE Imputation Challenge Scoring and Validation Scripts
+# ENCODE Imputation Challenge Scoring/Ranking and Validation Scripts
 
 ## Installation
 
@@ -6,10 +6,16 @@
 
 2) Install `numpy`, `scikit-learn` and `pyBigWig`.
 	```bash
-	$ conda install -c bioconda numpy scikit-learn pyBigWig sqlite scipy
+	$ conda install -y -c bioconda numpy scikit-learn pyBigWig sqlite scipy
 	```
 
-## Example (hg38)
+## Validating a submission
+
+```bash
+$ python validate.py [YOUR_SUBMISSION_BIGWIG]
+```
+
+## Scoring a submission
 
 1) Download ENCFF622DXZ and ENCFF074VQD from ENCODE portal.
 	```bash
@@ -18,7 +24,7 @@
 	$ wget https://www.encodeproject.org/files/ENCFF074VQD/@@download/ENCFF074VQD.bigWig
 	```
 
-2) Convert it to numpy array.
+2) Convert it to numpy array. This is to speed up scoring multiple submissions. `score.py` can also take bigwigs so you can skip this step.
 	```bash
 	$ python bw_to_npy.py test/hg38/ENCFF622DXZ.bigWig
 	$ python bw_to_npy.py test/hg38/ENCFF074VQD.bigWig
@@ -26,69 +32,69 @@
 
 3) Run it. If you score without a variance `.npy` file specified as `--var-npy`, then `msevar` metric will be `0.0`.
 	```bash
-	$ python score.py test/hg38/ENCFF622DXZ.npy test/hg38/ENCFF074VQD.npy \
-		--chrom chr20 --out-file test/hg38/ENCFF622DXZ.ENCFF074VQD.score.txt
+	$ python score.py test/hg38/ENCFF622DXZ.npy test/hg38/ENCFF074VQD.npy --chrom chr20
 	```
-
-4) Output looks like: (header: bootstrap_index, mse, mse1obs, mse1imp, gwcorr, match1, catch1obs, catch1imp, aucobs1, aucimp1, mseprom, msegene, mseenh).
-	```bash
-	bootstrap_-1	20.45688606636623	1730.3503548526915	195.52252657980728	0.01705378703206674	848	3462	2976	0.5852748736100822	0.590682173511888	376.1018309950674	31.24613030186926	94.01719916101615
-	```
-
-
-## Validation for submissions
-
-In order to validate your BIGWIG. Use `validate.py`.
-
-```bash
-$ python validate.py [YOUR_SUBMISSION_BIGWIG]
-```
 
 ## Ranking for submissions
 
-1) [Generate bootstrap label](#how-to-generate-bootstrap-labels)
+1) Create a score database.
+	```bash
+	$ python db.py [NEW_SCORE_DB_FILE]
+	```
 
-2) In order to speed up scoring, convert `TRUTH_BIGWIG` into numpy array/object (binned at `25`). Repeat this for each pair of cell type and assay.
+2) In order to speed up scoring, convert `TRUTH_BIGWIG` into numpy array/object (binned at `25`). Repeat this for each pair of cell type and assay. `--out-npy-prefix [TRUTH_NPY_PREFIX]` is optional. Repeat this for all truth bigwigs.
 	```bash
 	$ python bw_to_npy.py [TRUTH_BIGWIG] --out-npy-prefix [TRUTH_NPY_PREFIX]
 	```
 
-3) Create a score database.
+3) For each assay type, build a variance `.npy` file, which calculates a variance for each bin for each chromosome across all cell types. Without this variance file, `msevar` will be `0.0`.
 	```bash
-	$ python db.py [SCORE_DB_FILE]
+	$ python build_var_npy.py [TRUTH_NPY_CELL1] [TRUTH_NPY_CELL2] ... --out-npy-prefix var_[ASSAY_OR_MARK_ID]
 	```
 
-4) For each assay type, build a variance `.npy` file, which calculates a variance for each bin for each chromosome across all cell types. Without this variance file, `msevar` will be `0.0`.
-	$ python build_var_npy.py [TRUTH_NPY_CELL1] [TRUTH_NPY_CELL2] ... \
-		--out-npy-prefix var_[ASSAY_OR_MARK_ID]
-
-5) Score each submission with bootstrap labels. `--validated` is only for validated submissions binned at `25`. With this flag turned on, `score.py` will skip interpolation of intervals in a bigwig. For ranking, you need to define all metadata for a submission like `--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] -t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]`. These values will be written to a database file together with bootstrap scores. Repeat this for each submission (one submission per team for each pair of cell type and assay).
+4) Score each submission. `--validated` is only for a validated bigwig submission binned at `25`. With this flag turned on, `score.py` will skip interpolation of intervals in a bigwig. For ranking, you need to define metadata for a submission like -t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]`. These values will be written to a database file together with bootstrap scores. Repeat this for each submission (one submission per team for each pair of cell type and assay).
 	```bash
 	$ python score.py [YOUR_VALIDATED_SUBMISSION_BIGWIG_OR_NPY] [TRUTH_NPY] \
 	    --var-npy var_[ASSAY_OR_MARK_ID].npy \
 		--db-file [SCORE_DB_FILE] \
-		--cell [CELL_ID] --assay [ASSAY_OR_MARK_ID] \
-		-t [TEAM_ID_INT] -s [SUBMISSION_ID_INT] \
-		--validated
+		--validated \
+		-t [TEAM_ID_INT] -s [SUBMISSION_ID_INT]
 	```
 
-6) Calculate ranks based on DB file
+5) Calculate ranks based on DB file
 	```bash
 	$ python rank.py [SCORE_DB_FILE]
 	```
 
+## Setting up a leaderboard server (admins only)
 
-## For challenge admins
+1) Create a server instance on AWS.
 
-### How to generate bootstrap labels?
+2) Install Synapse client.
+	```bash
+	$ pip install synapseclient
+	```
 
-Download `submission_template.bigwig` from Synapse imputation challenge site. The following command will make 10-fold (default) bootstrap index for each chromosome. Output is a single `.npy` file which have all bootstrap labels for corresponding bootstrap index and chromosomes.
+3) Authenticate yourself on the server
+	```bash
+	$ synapse login --remember-me -u [USERNAME] -p [PASSWORD]
+	```
 
-```bash
-$ python build_bootstrapped_label.py submission_template.bigwig
-```
+4) Create a score database.
+	```bash
+	$ python db.py [NEW_SCORE_DB_FILE]
+	```
 
-### How to use bootstrapped label?
+5) Run `score_leaderboard.py` for each submission. Files on `TRUTH_NPY_DIR` should looks like `CXXMYY.npy`. Files on `VAR_NPY_DIR` should look like `var_MXX.npy`. Submissions will be downloaded on `SUBMISSION_DOWNLOAD_DIR`.
+	```bash
+	$ python score_leaderboard.py [EVALUATION_QUEUE_ID] [TRUTH_NPY_DIR] \
+	    --var-npy-dir [VAR_NPY_DIR] \
+	    --submission-dir [SUBMISSION_DOWNLOAD_DIR] \
+	    --send-to-admin \
+		--db-file [SCORE_DB_FILE]
+	```
 
-Simply run `score.py` with `--bootstrapped-label-npy bootstrapped_label.npy`.
-
+	Example:
+	```bash
+	$ python score_leaderboard.py 9614278 --send-to-admin --submission-dir ./submissions --db-file test.db
+	```

@@ -11,11 +11,18 @@ from score_metrics import mse, mseprom, msegene, mseenh, msevar, mse1obs, mse1im
 from score_metrics import gwcorr, gwspear
 from score_metrics import normalize_dict
 from db import write_to_db, ScoreDBRecord
-from challenge_metadata import init_synapse, download_submissions_from_syn
+
 from bw_to_npy import load_bed, load_npy, bw_to_dict, dict_to_arr
 
 
-PERIOD_SCORE_SUBMISSION = 1800  # check submissions every 15 min
+
+def parse_submission_filename(bw_file):
+    """Filename should be CXXMYY.bigwig or CXXMYY.bw
+    """
+    basename_wo_ext = os.bath.basename(os.path.splitext(bw_file)[0])
+    cell = basename_wo_ext[0:3]
+    assay = basename_wo_ext[3:6]
+    return cell, assay
 
 
 def score(y_pred_dict, y_true_dict, chroms,
@@ -80,10 +87,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description='ENCODE Imputation Challenge scoring script. .npy or .npz must be built '
              'with a correct --window-size. i.e. containing a value for each bin')
-    parser.add_argument('npy_pred_or_syn_eval_queue',
-                        help='Submission .npy file to be scored OR Synapse evaluation queue')
-    parser.add_argument('npy_true',
-                        help='Truth .npy file')
+    parser.add_argument('pred_npy_or_bw',
+                        help='Submission .npy or .bigwig file to be scored')
+    parser.add_argument('true_npy_or_bw',
+                        help='Truth .npy or .bigwig file')
     parser.add_argument('--download-submissions-from-syn-eval-queue', action='store_true',
                          help='Download RECEIVED submissions from Synapse '
                               'evaluation queue.')
@@ -135,7 +142,7 @@ def parse_arguments():
                          help='Promoter location in a unit of window size '
                               '(--window-size). This is not in bp')
     p_score.add_argument('--validated', action='store_true',
-                         help='For validated submissions (not for truth bigwigs)'
+                         help='For validated submissions (not for truth bigwigs) '
                               'with fixed interval length of 25 and valid '
                               'chromosome lengths. It will skip interpolation. '
                               'For truth bigwigs, it is recommended to convert '
@@ -145,8 +152,6 @@ def parse_arguments():
     #                     help='Normalize with robust min max.')
     p_out = parser.add_argument_group(
                         title='Output to file (TSV or DB)')
-    p_out.add_argument('--out-file', default='output.tsv',
-                       help='Write scores to TSV file')
     p_out.add_argument('--db-file',
                        help='Write metadata/scores to SQLite DB file')
     p_meta = parser.add_argument_group(
@@ -159,26 +164,9 @@ def parse_arguments():
                         help='Submission ID (unique ID from Synapse)')
     args = parser.parse_args()
 
-    # some submission files have whitespace in path...
-    if args.npy_pred_or_syn_eval_queue is not None:
-        args.npy_pred_or_syn_eval_queue = args.npy_pred_or_syn_eval_queue.strip("'")
-    if args.npy_true is not None:
-        args.npy_true = args.npy_true.strip("'")
-    if args.var_npy is not None:
-        args.var_npy = args.var_npy.strip("'")
-    if args.out_file is not None:
-        args.out_file = args.out_file.strip("'")
-
     if args.db_file is not None:
-        args.db_file = args.db_file.strip("'")
         if not os.path.exists(args.db_file):
             raise ValueError('DB file does not exists')
-        # if args.team_id is None:
-        #     raise ValueError(
-        #         'Define "--team-id" to write scores to DB file')
-        # if args.submission_id is None:
-        #     raise ValueError(
-        #         'Define "--submission-id" to write scores to DB file')
 
     if args.chrom == ['all']:
         args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
@@ -197,16 +185,15 @@ def parse_arguments():
 def main():
     args = parse_arguments()
 
-    y_true_dict = build_npy_from_bw(args.npy_true, args.chrom,
-                                    args.window_size, args.blacklist_file)
-    # read var npy to compute mseVar
+    y_pred_dict = bw_to_dict(args.pred_npy_or_bw, args.chrom,
+                             args.window_size, args.blacklist_file)
+    y_true_dict = bw_to_dict(args.true_npy_or_bw, args.chrom,
+                             args.window_size, args.blacklist_file)
     if args.var_npy is None:
         y_var_dict = None
-
     elif args.var_npy.endswith(('.npy', '.npz')):
         log.info('Opening truth var numpy array file...')
         y_var_dict = load_npy(args.var_npy)
-
     else:
         raise ValueError('Var true file should be a binned .npy or .npz.')
 
@@ -215,71 +202,30 @@ def main():
 
     gc.disable()
 
-    use_syn = args.download_submissions_from_syn
+    cell, assay = parse_submission_filename(args.pred_npy_or_bw)
 
-    with open(args.out_file, 'w') as fp:
-        while True:        
-            if use_syn:
-                init_synapse()
-                eval_queue_id = args.npy_pred_or_syn_eval_queue
-                submissions = download_submissions(eval_queue_id)
-            else:
-                submissions = [{
-                    'submission_id': args.submission_id,
-                    'team_id': args.team_id,
-                    'bw': args.npy_pred_or_syn_eval_queue
-                }]
+    for k, bootstrap_chrom in args.bootstrap_chrom:
+        log.info('Calculating score for bootstrap {} case...'.format(k))
 
-            for submission in submissions:
-                submission_id = submission['submission_id']
-                team_id = submission['team_id']
-                bw = submission['bw']
-                cell, assay = parse_submission_filename(bw)
+        score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
+                             gene_annotations, enh_annotations,
+                             args.window_size, args.prom_loc,
+                             y_var_dict)
+        s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
+        print(s)
 
-                try:
-                    log.info('Calculating score for submission {}...'.format(bw))
-                    y_pred_dict = bw_to_npy(bw,
-                                            args.chrom,
-                                            args.window_size,
-                                            args.blacklist_file,
-                                            args.validated)
-
-                    for k, bootstrap_chrom in args.bootstrap_chrom:
-                        log.info('Calculating score for bootstrap {} case...'.format(k))
-
-                        score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
-                                       gene_annotations, enh_annotations,
-                                       args.window_size, args.prom_loc,
-                                       y_var_dict)
-                        # write to TSV
-                        s = "\t".join(['bootstrap_'+str(k)]+[str(o) for o in score_output])
-                        fp.write(s+'\n')
-                        print(s)
-
-                        # write to DB
-                        if args.db_file is not None:
-                            score_db_record = ScoreDBRecord(
-                                submission_id,
-                                team_id,
-                                os.path.basename(bw),
-                                cell,
-                                assay,
-                                k,
-                                *score_output)
-                            write_to_db(score_db_record, args.db_file)
-                        gc.collect()
-                except:
-                    log.error('Failed to score submission {}'.format(bw))
-
-            if use_syn:
-                log.info('Waiting for {} secs to check new submissions on '
-                         'syn eval queue'.format(PERIOD_SCORE_SUBMISSION))
-                time.sleep(PERIOD_SCORE_SUBMISSION)
-            else:
-                break
-
-            if not use_syn:
-                break
+        # write to DB
+        if args.db_file is not None:
+            score_db_record = ScoreDBRecord(
+                args.submission_id,
+                args.team_id,
+                os.path.basename(bw),
+                cell,
+                assay,
+                k,
+                *score_output)
+            write_to_db(score_db_record, args.db_file)
+        gc.collect()
 
     log.info('All done')
 
