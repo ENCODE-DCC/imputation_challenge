@@ -15,3 +15,5 @@ join.log
 *.tsv
 __pycache__
 round1
+*.pyc
+
