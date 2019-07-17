@@ -108,9 +108,9 @@ def read_scores_from_db(db_file, chroms):
         else:
             break
     
-    if len(result) == 0:
-        print('No records found. '
-            'Did you forget to specify "--chrom"?')
+    #if len(result) == 0:
+    #    print('No records found. '
+    #        'Did you forget to specify "--chrom"?')
 
     return result
 
