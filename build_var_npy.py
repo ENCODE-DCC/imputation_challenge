@@ -7,7 +7,7 @@ Author:
 
 import numpy
 import pyBigWig
-from score_metric import normalize_dict
+from score_metrics import normalize_dict
 from bw_to_npy import write_dict_to_npy, load_npy
 from logger import log
 
@@ -19,7 +19,7 @@ def build_var_dict(npys, chroms):
 
     for f in npys:
         y_dict = load_npy(f)
-        y_dict_norm = normalize_dict(y_dict)
+        y_dict_norm = normalize_dict(y_dict, chroms)
 
         for c in chroms:
             y_all[c].append(y_dict_norm[c])
