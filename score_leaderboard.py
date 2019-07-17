@@ -4,7 +4,7 @@ Author:
     Jin Lee (leepc12@gmail.com)
 """
 
-import sys
+import os
 import time
 import gc
 import traceback
@@ -17,7 +17,7 @@ from io import StringIO
 from logger import log
 
 
-ADMINS = ['syn3345120', ]  # leepc12,
+ADMINS = ['3345120', ]  # leepc12,
 
 
 
@@ -35,15 +35,17 @@ def mkdir_p(path):
 
 
 def send_message(syn, user_ids, subject, message):
+    if len(user_ids) == 0:
+        return None
     try:
         response = syn.sendMessage(
             userIds=user_ids,
             messageSubject=subject,
             messageBody=message,
             contentType="text/html")
-        log.info("Message sent: ", unicode(response).encode('utf-8'))
+        log.info("Message sent: {}".format(str(response).encode('utf-8')))
     except Exception as ex0:
-        log.info("Failed to send message:", ex0)
+        log.error("Failed to send message: {}".format(ex0))
         response = None
 
     return response
@@ -115,6 +117,10 @@ def parse_arguments():
                                  'msegene', 'mseenh', 'msevar', 'mse1obs',
                                  'mse1imp'],
                         help='List of performance measures to be used for ranking')
+    p_score.add_argument('--validated', action='store_true',
+                         help='For validated submissions '
+                              'with fixed interval length of 25 and valid '
+                              'chromosome lengths. It will skip interpolation')
     #p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
     #                     help='Normalize with robust min max.')
     p_out = parser.add_argument_group(
@@ -131,8 +137,10 @@ def parse_arguments():
                        help='Synapse wiki ID for leaderboard.')
     p_syn.add_argument('--submission-dir', default='./submissions',
                        help='Download submissions here.')
-    p_syn.add_argument('--send-to-admin', action='store_true',
-                       help='Send message to admins.')
+    p_syn.add_argument('--send-msg-to-admin', action='store_true',
+                       help='Send message to admin.')
+    p_syn.add_argument('--send-msg-to-user', action='store_true',
+                       help='Send message to user.')
     p_syn.add_argument('--period', default=1800,
                        help='Time period in second to download submissions from synapse '
                             'and score them')
@@ -173,9 +181,14 @@ def main():
     while True:
         try:
             evaluation = syn.getEvaluation(args.eval_queue_id)
+            #print(evaluation)
 
-            for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
-                log.info(submission, status)
+            #for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
+            for submission, status in syn.getSubmissionBundles(evaluation):
+                #print(submission, status)
+                if status == 'SCORED':
+                    continue
+                   
                 status.status = "INVALID"
 
                 try:
@@ -199,7 +212,8 @@ def main():
                     # read pred npy (submission)
                     log.info('Converting to dict...')
                     y_pred_dict = bw_to_dict(submission_fname, args.chrom,
-                                             args.window_size, args.blacklist_file)
+                                             args.window_size, args.blacklist_file,
+                                             args.validated)
                     # read truth npy
                     npy_true = os.path.join(
                         args.true_npy_dir,
@@ -251,13 +265,16 @@ def main():
                     subject = 'Error scoring submission %s %s %s:\n' % (
                         submission.name, submission.id, submission.userId)
                     st = StringIO()
-                    traceback.log.info_exc(file=st)
+                    traceback.print_exc(file=st)
                     message = st.getvalue()
                     
-                    users_to_send_msg = [submission.userId]
-                    if args.send_to_admin:
+                    users_to_send_msg = []
+                    if args.send_msg_to_user:
+                        users_to_send_msg.append(submission.userId)
+                    if args.send_msg_to_admin:
                         users_to_send_msg.extend(ADMINS)
                     send_message(syn, users_to_send_msg, subject, message)
+                    log.error(message)
 
                 if not args.dry_run:
                     status = syn.store(status)
@@ -274,7 +291,14 @@ def main():
                     subject = 'Failed to score submission %s %s %s:\n' % (
                         submission.name, submission.id, submission.userId)
                     message = 'No message\n'
-                send_message(sym, [submission.userId], subject, message)
+                
+                users_to_send_msg = []
+                if args.send_msg_to_user:
+                    users_to_send_msg.append(submission.userId)
+                if args.send_msg_to_admin:
+                    users_to_send_msg.extend(ADMINS)
+                send_message(syn, users_to_send_msg, subject, message)
+                log.error(message)
 
             # calculate ranks and update leaderboard wiki
             log.info('Updating ranks...')
@@ -287,11 +311,13 @@ def main():
 
         except Exception as ex1:
             st = StringIO()
-            traceback.log.info_exc(file=st)
+            traceback.print_exc(file=st)
             message = st.getvalue()
 
             subject = 'Server error:'
-            send_message(syn, ADMINS, subject, message)
+            if args.send_msg_to_admin:
+                send_message(syn, ADMINS, subject, message)
+            log.error(message)
 
         log.info('Waiting for {} secs to check new submissions on '
                  'syn eval queue'.format(args.period))
