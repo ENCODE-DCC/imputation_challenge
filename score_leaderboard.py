@@ -181,13 +181,12 @@ def main():
     while True:
         try:
             evaluation = syn.getEvaluation(args.eval_queue_id)
-            #print(evaluation)
 
             #for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
             for submission, status in syn.getSubmissionBundles(evaluation):
                 #print(submission, status)
-                if status == 'SCORED':
-                    continue
+                #if status == 'SCORED':
+                #    continue
                    
                 status.status = "INVALID"
 
@@ -203,6 +202,7 @@ def main():
                         downloadLocation=submission_dir, 
                         ifcollision='overwrite.local'
                     )
+                    print()
                     submission_fname = submission.filePath
                     cell, assay = parse_submission_filename(submission_fname)
                     log.info('Downloading done {}, {}, {}, {}, {}'.format(
@@ -298,7 +298,7 @@ def main():
                 if args.send_msg_to_admin:
                     users_to_send_msg.extend(ADMINS)
                 send_message(syn, users_to_send_msg, subject, message)
-                log.error(message)
+                log.info(message)
 
             # calculate ranks and update leaderboard wiki
             log.info('Updating ranks...')
