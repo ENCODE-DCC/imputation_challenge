@@ -9,6 +9,7 @@ import time
 import gc
 import traceback
 import synapseclient
+import multiprocessing
 from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
 from rank import calc_global_ranks
@@ -17,6 +18,7 @@ from io import StringIO
 from logger import log
 
 
+BIG_INT = 99999999  # for multiprocessing
 ADMINS = ['3345120', ]  # leepc12,
 
 
@@ -127,6 +129,11 @@ def parse_arguments():
                         title='Output database file')
     p_out.add_argument('--db-file',
                        help='Write metadata/scores to SQLite DB file')
+    p_sys = parser.add_argument_group(
+                        title='System and resource settings')
+    p_sys.add_argument('--nth', '-n', type=int, default=1,
+                       help='Number of threads to be used for parallelizing '
+                            'bootstrap scoring.')
     p_syn = parser.add_argument_group(
                         title='Communitation with synapse')
     p_syn.add_argument('--dry-run', action='store_true',
@@ -229,15 +236,31 @@ def main():
                     else:
                         y_var_dict = None
 
-                    # score it for each bootstrap chroms
-                    score_outputs = []
+                    # initialize multiprocessing
+                    pool = multiprocessing.Pool(args.nth)
+
+                    # distribute jobs
+                    ret_vals = []
                     for k, bootstrap_chrom in args.bootstrap_chrom:
+                        # score it for each bootstrap chroms
+                        r = pool.apply_async(
+                            score, (y_pred_dict, y_true_dict, bootstrap_chrom,
+                                    gene_annotations, enh_annotations,
+                                    args.window_size, args.prom_loc,
+                                    y_var_dict))
+                        ret_vals.append((k, r))
+
+                    # gather outputs
+                    score_outputs = []
+                    for k, r in ret_vals:
                         log.info('Scoring... k={}'.format(k))
-                        score_output = score(y_pred_dict, y_true_dict, bootstrap_chrom,
-                                             gene_annotations, enh_annotations,
-                                             args.window_size, args.prom_loc,
-                                             y_var_dict)
-                        # write to db
+                        score_output.append((k, r.get(BIG_INT)))
+
+                    pool.close()
+                    pool.join()
+
+                    # write to db and report
+                    for k, score_output in score_outputs:
                         if not args.dry_run:
                             score_db_record = ScoreDBRecord(
                                 int(submission.id),
@@ -248,11 +271,9 @@ def main():
                                 k,
                                 *score_output)
                             write_to_db(score_db_record, args.db_file)
-
-                        score_outputs.append((k, score_output))
                         log.info('Scored: {}, {}, {}, {}'.format(
                             submission.id, submission.teamId, k, score_output))
-
+                    # mark is as scored
                     status.status = "SCORED"
 
                     # free memory
@@ -285,8 +306,9 @@ def main():
                 if status.status == 'SCORED':
                     subject = 'Successfully scored submission %s %s %s:\n' % (
                         submission.name, submission.id, submission.userId)
-                    message = 'Score (bootstrap_idx, score)\n'
-                    message += '\n'.join([str(s) for s in score_outputs])
+                    message = 'Score (bootstrap_idx: score)\n'
+                    message += '\n'.join(
+                        ['{}: {}'.format(k, s) for k, s in score_outputs])
                 else:
                     subject = 'Failed to score submission %s %s %s:\n' % (
                         submission.name, submission.id, submission.userId)
