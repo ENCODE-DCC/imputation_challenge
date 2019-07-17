@@ -142,7 +142,7 @@ def bw_to_dict(bw_file, chrs, window_size=25,
                 blacklist_lines, chrs, window_size)
             bfilt_y_dict = blacklist_filter(y_dict, blacklist_bin_ids)
 
-        bfilt_y_array = dict_to_arr(bfilt_y_dict, chrs)
+        #bfilt_y_array = dict_to_arr(bfilt_y_dict, chrs)
         #robust_min, robust_max = find_robust_min_max(bfilt_y_array)
         #bfilt_y_dict['robust_min'] = robust_min
         #bfilt_y_dict['robust_max'] = robust_max
