@@ -280,6 +280,7 @@ def score_submission(submission, status, args, syn,
     finally:
         # remove submissions (both bigwig, npy) to save disk space
         # shutil.rmtree(submission_dir)
+        pass
 
     # send message
     users_to_send_msg = []
