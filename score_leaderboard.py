@@ -6,13 +6,14 @@ Author:
 
 import os
 import time
+import shutil
 import gc
 import traceback
 import synapseclient
 import multiprocessing
 from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
-from rank import calc_global_ranks
+from rank import calc_global_ranks, get_cell_name, get_assay_name, get_team_name
 from db import write_to_db, ScoreDBRecord, DB_QUERY_GET, read_scores_from_db
 from io import StringIO
 from logger import log
@@ -121,6 +122,9 @@ def parse_arguments():
                          help='For validated submissions '
                               'with fixed interval length of 25 and valid '
                               'chromosome lengths. It will skip interpolation')
+    p_score.add_argument('--update-wiki-only', action='store_true',
+                         help='Update wiki based on DB file (--db-file) without '
+                              'scoring submissions')
     #p_score.add_argument('--normalize-with-robust-min-max', action='store_true',
     #                     help='Normalize with robust min max.')
     p_out = parser.add_argument_group(
@@ -137,8 +141,9 @@ def parse_arguments():
                        help='Do not update submission\'s status on synapse.')
     p_syn.add_argument('--project-id', default='syn17083203',
                        help='Synapse project ID.')
-    p_syn.add_argument('--leaderboard-wiki-id', default='594012',
-                       help='Synapse wiki ID for leaderboard.')
+    p_syn.add_argument('--leaderboard-wiki-id', default='parent:594012',
+                       help='Comma-delimited Synapse wiki ID for leaderboard. '
+                            'Format example: "parent:594012,C01:594013,C02:594014"')
     p_syn.add_argument('--submission-dir', default='./submissions',
                        help='Download submissions here.')
     p_syn.add_argument('--send-msg-to-admin', action='store_true',
@@ -177,6 +182,12 @@ def score_submission(submission, status, args, syn,
     submission_dir = os.path.join(
         os.path.abspath(args.submission_dir), submission.id)
     mkdir_p(submission_dir)
+
+    chosen_score = None  # first bootstrap score
+    metadata = {
+        'id': submission.id,
+        'team': get_team_name(syn, None, submission.teamId)
+    }
 
     try:
         log.info('Downloading submission... {}'.format(submission.id))
@@ -228,6 +239,8 @@ def score_submission(submission, status, args, syn,
                 submission.id, submission.teamId, k, r))
             score_outputs.append((k, r))
 
+        chosen_score = score_outputs[0]
+
         # write to db and report
         for k, score_output in score_outputs:
             if not args.dry_run:
@@ -266,7 +279,7 @@ def score_submission(submission, status, args, syn,
 
     finally:
         # remove submissions (both bigwig, npy) to save disk space
-        pass
+        # shutil.rmtree(submission_dir)
 
     # send message
     users_to_send_msg = []
@@ -277,6 +290,15 @@ def score_submission(submission, status, args, syn,
     send_message(syn, users_to_send_msg, subject, message)
 
     if not args.dry_run:
+        # update metadata with score
+        if chosen_score is not None:
+            for field in Score._fields:
+                metadata[field] = getattr(chosen_score, field)
+            metadata['cell'] = cell
+            metadata['assay'] = assay
+
+        status.annotations = synapseclient.annotations.to_submission_status_annotations(
+            metadata, is_private=False)
         status = syn.store(status)
 
     return None
@@ -297,28 +319,29 @@ def main():
 
     while True:
         try:
-            evaluation = syn.getEvaluation(args.eval_queue_id)
+            if not args.update_wiki_only:
+                evaluation = syn.getEvaluation(args.eval_queue_id)
 
-            # init multiprocessing
-            pool = multiprocessing.Pool(args.nth)
+                # init multiprocessing
+                pool = multiprocessing.Pool(args.nth)
 
-            # distribute jobs
-            ret_vals = []
-            #for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
-            for submission, status in syn.getSubmissionBundles(evaluation):
-                #print(submission, status)
-                #if status == 'SCORED':
-                #    continue
-                ret_vals.append(
-                    pool.apply_async(score_submission,
-                                     (submission, status, args, syn,
-                                      gene_annotations, enh_annotations)))
-            # gather
-            for r in ret_vals:
-                r.get(BIG_INT)
+                # distribute jobs
+                ret_vals = []
+                #for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
+                for submission, status in syn.getSubmissionBundles(evaluation):
+                    #print(submission, status)
+                    #if status == 'SCORED':
+                    #    continue
+                    ret_vals.append(
+                        pool.apply_async(score_submission,
+                                         (submission, status, args, syn,
+                                          gene_annotations, enh_annotations)))
+                # gather
+                for r in ret_vals:
+                    r.get(BIG_INT)
 
-            pool.close()
-            pool.join()
+                pool.close()
+                pool.join()
 
             # calculate ranks and update leaderboard wiki
             log.info('Updating ranks...')

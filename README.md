@@ -2,7 +2,11 @@
 
 ## Installation
 
-1) [Install Conda](https://docs.conda.io/en/latest/miniconda.html) first.
+1) [Install Conda 4.6.14](https://docs.conda.io/en/latest/miniconda.html) first. Answer `yes` to all Y/N questions. Use default installation paths. Re-login after installation.
+	```bash
+	$ wget https://repo.anaconda.com/miniconda/Miniconda3-4.6.14-Linux-x86_64.sh
+	$ bash Miniconda3-4.6.14-Linux-x86_64.sh
+	```
 
 2) Install `numpy`, `scikit-learn` and `pyBigWig`.
 	```bash
