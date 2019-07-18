@@ -129,6 +129,8 @@ def parse_arguments():
                        help='Write metadata/scores to SQLite DB file')
     p_sys = parser.add_argument_group(
                         title='System and resource settings')
+    p_sys.add_argument('--nth', type=int, default=1,
+                        help='Number of threads to parallelize scoring (per) submission')
     p_syn = parser.add_argument_group(
                         title='Communitation with synapse')
     p_syn.add_argument('--dry-run', action='store_true',
@@ -169,14 +171,15 @@ def parse_arguments():
     return args
 
 
-def score_submission(submission, status, args, syn=None):
+def score_submission(submission, status, args, syn,
+                     gene_annotations, enh_annotations):
     status.status = "INVALID"
     submission_dir = os.path.join(
         os.path.abspath(args.submission_dir), submission.id)
     mkdir_p(submission_dir)
 
     try:
-        log.info('Downloading submission...')
+        log.info('Downloading submission... {}'.format(submission.id))
         submission = syn.getSubmission(
             submission, 
             downloadLocation=submission_dir, 
@@ -190,16 +193,18 @@ def score_submission(submission, status, args, syn=None):
             submission.teamId, cell, assay))
 
         # read pred npy (submission)
-        log.info('Converting to dict...')
+        log.info('Converting to dict...{}'.format(submission.id))
         y_pred_dict = bw_to_dict(submission_fname, args.chrom,
                                  args.window_size, args.blacklist_file,
                                  args.validated)
+        gc.collect()
         # read truth npy
         npy_true = os.path.join(
             args.true_npy_dir,
             '{}{}.npy'.format(cell, assay))
         y_true_dict = bw_to_dict(npy_true, args.chrom,
                                  args.window_size, args.blacklist_file)
+        gc.collect()
         # read var npy
         if args.var_npy_dir is not None:   
             var_npy = os.path.join(
@@ -208,15 +213,17 @@ def score_submission(submission, status, args, syn=None):
             y_var_dict = load_npy(var_npy)
         else:
             y_var_dict = None
+        gc.collect()
 
         score_outputs = []
         for k, bootstrap_chrom in args.bootstrap_chrom:
             # score it for each bootstrap chroms
-            log.info('Scoring... k={}'.format(k))
+            log.info('Scoring... k={}, submission_id={}'.format(k, submission.id))
             r = score(y_pred_dict, y_true_dict, bootstrap_chrom,
                       gene_annotations, enh_annotations,
                       args.window_size, args.prom_loc,
                       y_var_dict)
+            gc.collect()  # free memory for bootstrapped arrays
             log.info('Scored: {}, {}, {}, {}'.format(
                 submission.id, submission.teamId, k, r))
             score_outputs.append((k, r))
@@ -247,7 +254,7 @@ def score_submission(submission, status, args, syn=None):
         message = 'Score (bootstrap_idx: score)\n'
         message += '\n'.join(
             ['{}: {}'.format(k, s) for k, s in score_outputs])
-        log.info(message)
+        log.info(subject + message)
 
     except Exception as ex1:
         subject = 'Error scoring submission %s %s %s:\n' % (
@@ -255,7 +262,7 @@ def score_submission(submission, status, args, syn=None):
         st = StringIO()
         traceback.print_exc(file=st)
         message = st.getvalue()
-        log.error(message)
+        log.error(subject + message)
 
     finally:
         # remove submissions (both bigwig, npy) to save disk space
@@ -304,7 +311,8 @@ def main():
                 #    continue
                 ret_vals.append(
                     pool.apply_async(score_submission,
-                                     (submission, status, args, syn)))
+                                     (submission, status, args, syn,
+                                      gene_annotations, enh_annotations)))
             # gather
             for r in ret_vals:
                 r.get(BIG_INT)
