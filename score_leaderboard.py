@@ -9,6 +9,7 @@ import time
 import gc
 import traceback
 import synapseclient
+import multiprocessing
 from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
 from rank import calc_global_ranks
@@ -17,8 +18,7 @@ from io import StringIO
 from logger import log
 
 
-ADMINS = ['3345120', ]  # leepc12,
-
+BIG_INT = 99999999  # for multiprocessing
 
 
 def mkdir_p(path):
@@ -146,6 +146,8 @@ def parse_arguments():
     p_syn.add_argument('--period', default=1800,
                        help='Time period in second to download submissions from synapse '
                             'and score them')
+    p_syn.add_argument('--admin-id', nargs='+', default=['3345120'],
+                       help='Admin\'s Synapse ID (as string) ')
     args = parser.parse_args()
 
     if args.db_file is not None:
@@ -167,6 +169,112 @@ def parse_arguments():
     return args
 
 
+def score_submission(submission, status, args, syn=None):
+    status.status = "INVALID"
+    submission_dir = os.path.join(
+        os.path.abspath(args.submission_dir), submission.id)
+    mkdir_p(submission_dir)
+
+    try:
+        log.info('Downloading submission...')
+        submission = syn.getSubmission(
+            submission, 
+            downloadLocation=submission_dir, 
+            ifcollision='overwrite.local'
+        )
+        print()
+        submission_fname = submission.filePath
+        cell, assay = parse_submission_filename(submission_fname)
+        log.info('Downloading done {}, {}, {}, {}, {}'.format(
+            submission_fname, submission.id,
+            submission.teamId, cell, assay))
+
+        # read pred npy (submission)
+        log.info('Converting to dict...')
+        y_pred_dict = bw_to_dict(submission_fname, args.chrom,
+                                 args.window_size, args.blacklist_file,
+                                 args.validated)
+        # read truth npy
+        npy_true = os.path.join(
+            args.true_npy_dir,
+            '{}{}.npy'.format(cell, assay))
+        y_true_dict = bw_to_dict(npy_true, args.chrom,
+                                 args.window_size, args.blacklist_file)
+        # read var npy
+        if args.var_npy_dir is not None:   
+            var_npy = os.path.join(
+                args.var_npy_dir,
+                'var_{}.npy'.format(assay))
+            y_var_dict = load_npy(var_npy)
+        else:
+            y_var_dict = None
+
+        score_outputs = []
+        for k, bootstrap_chrom in args.bootstrap_chrom:
+            # score it for each bootstrap chroms
+            log.info('Scoring... k={}'.format(k))
+            r = score(y_pred_dict, y_true_dict, bootstrap_chrom,
+                      gene_annotations, enh_annotations,
+                      args.window_size, args.prom_loc,
+                      y_var_dict)
+            log.info('Scored: {}, {}, {}, {}'.format(
+                submission.id, submission.teamId, k, r))
+            score_outputs.append((k, r))
+
+        # write to db and report
+        for k, score_output in score_outputs:
+            if not args.dry_run:
+                score_db_record = ScoreDBRecord(
+                    int(submission.id),
+                    int(submission.teamId),
+                    submission_fname,
+                    cell,
+                    assay,
+                    k,
+                    *score_output)
+                write_to_db(score_db_record, args.db_file)
+        # mark is as scored
+        status.status = "SCORED"
+
+        # free memory
+        y_pred_dict = None
+        y_true_dict = None
+        y_var_dict = None
+        gc.collect()
+
+        subject = 'Successfully scored submission %s %s %s:\n' % (
+            submission.name, submission.id, submission.userId)
+        message = 'Score (bootstrap_idx: score)\n'
+        message += '\n'.join(
+            ['{}: {}'.format(k, s) for k, s in score_outputs])
+        log.info(message)
+
+    except Exception as ex1:
+        subject = 'Error scoring submission %s %s %s:\n' % (
+            submission.name, submission.id, submission.userId)
+        st = StringIO()
+        traceback.print_exc(file=st)
+        message = st.getvalue()
+        log.error(message)
+
+    finally:
+        # remove submissions (both bigwig, npy) to save disk space
+        pass
+
+    # send message
+    users_to_send_msg = []
+    if args.send_msg_to_user:
+        users_to_send_msg.append(submission.userId)
+    if args.send_msg_to_admin:
+        users_to_send_msg.extend(args.admin_id)
+    send_message(syn, users_to_send_msg, subject, message)
+
+    if not args.dry_run:
+        status = syn.store(status)
+
+    return None
+
+
 def main():
     log.info('Parsing arguments...')
 
@@ -184,125 +292,25 @@ def main():
         try:
             evaluation = syn.getEvaluation(args.eval_queue_id)
 
+            # init multiprocessing
+            pool = multiprocessing.Pool(args.nth)
+
+            # distribute jobs
+            ret_vals = []
             #for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
             for submission, status in syn.getSubmissionBundles(evaluation):
                 #print(submission, status)
                 #if status == 'SCORED':
                 #    continue
-                   
-                status.status = "INVALID"
+                ret_vals.append(
+                    pool.apply_async(score_submission,
+                                     (submission, status, args, syn)))
+            # gather
+            for r in ret_vals:
+                r.get(BIG_INT)
 
-                try:
-                    # download submission
-                    submission_dir = os.path.join(
-                        os.path.abspath(args.submission_dir), submission.id)
-                    mkdir_p(submission_dir)
-
-                    log.info('Downloading submission...')
-                    submission = syn.getSubmission(
-                        submission, 
-                        downloadLocation=submission_dir, 
-                        ifcollision='overwrite.local'
-                    )
-                    print()
-                    submission_fname = submission.filePath
-                    cell, assay = parse_submission_filename(submission_fname)
-                    log.info('Downloading done {}, {}, {}, {}, {}'.format(
-                        submission_fname, submission.id,
-                        submission.teamId, cell, assay))
-
-                    # read pred npy (submission)
-                    log.info('Converting to dict...')
-                    y_pred_dict = bw_to_dict(submission_fname, args.chrom,
-                                             args.window_size, args.blacklist_file,
-                                             args.validated)
-                    # read truth npy
-                    npy_true = os.path.join(
-                        args.true_npy_dir,
-                        '{}{}.npy'.format(cell, assay))
-                    y_true_dict = bw_to_dict(npy_true, args.chrom,
-                                             args.window_size, args.blacklist_file)
-                    # read var npy
-                    if args.var_npy_dir is not None:   
-                        var_npy = os.path.join(
-                            args.var_npy_dir,
-                            'var_{}.npy'.format(assay))
-                        y_var_dict = load_npy(var_npy)
-                    else:
-                        y_var_dict = None
-
-                    score_outputs = []
-                    for k, bootstrap_chrom in args.bootstrap_chrom:
-                        # score it for each bootstrap chroms
-                        log.info('Scoring... k={}'.format(k))
-                        r = score(y_pred_dict, y_true_dict, bootstrap_chrom,
-                                  gene_annotations, enh_annotations,
-                                  args.window_size, args.prom_loc,
-                                  y_var_dict)
-                        log.info('Scored: {}, {}, {}, {}'.format(
-                            submission.id, submission.teamId, k, r))
-                        score_outputs.append((k, r))
-
-                    # write to db and report
-                    for k, score_output in score_outputs:
-                        if not args.dry_run:
-                            score_db_record = ScoreDBRecord(
-                                int(submission.id),
-                                int(submission.teamId),
-                                submission_fname,
-                                cell,
-                                assay,
-                                k,
-                                *score_output)
-                            write_to_db(score_db_record, args.db_file)
-                    # mark is as scored
-                    status.status = "SCORED"
-
-                    # free memory
-                    y_pred_dict = None
-                    y_true_dict = None
-                    y_var_dict = None
-                    gc.collect()
-
-                except Exception as ex1:
-                    subject = 'Error scoring submission %s %s %s:\n' % (
-                        submission.name, submission.id, submission.userId)
-                    st = StringIO()
-                    traceback.print_exc(file=st)
-                    message = st.getvalue()
-                    
-                    users_to_send_msg = []
-                    if args.send_msg_to_user:
-                        users_to_send_msg.append(submission.userId)
-                    if args.send_msg_to_admin:
-                        users_to_send_msg.extend(ADMINS)
-                    send_message(syn, users_to_send_msg, subject, message)
-                    log.error(message)
-
-                if not args.dry_run:
-                    status = syn.store(status)
-
-                ## send message AFTER storing status to ensure we don't get repeat messages
-                profile = syn.getUserProfile(submission.userId)
-
-                if status.status == 'SCORED':
-                    subject = 'Successfully scored submission %s %s %s:\n' % (
-                        submission.name, submission.id, submission.userId)
-                    message = 'Score (bootstrap_idx: score)\n'
-                    message += '\n'.join(
-                        ['{}: {}'.format(k, s) for k, s in score_outputs])
-                else:
-                    subject = 'Failed to score submission %s %s %s:\n' % (
-                        submission.name, submission.id, submission.userId)
-                    message = 'No message\n'
-                
-                users_to_send_msg = []
-                if args.send_msg_to_user:
-                    users_to_send_msg.append(submission.userId)
-                if args.send_msg_to_admin:
-                    users_to_send_msg.extend(ADMINS)
-                send_message(syn, users_to_send_msg, subject, message)
-                log.info(message)
+            pool.close()
+            pool.join()
 
             # calculate ranks and update leaderboard wiki
             log.info('Updating ranks...')
@@ -320,7 +328,7 @@ def main():
 
             subject = 'Server error:'
             if args.send_msg_to_admin:
-                send_message(syn, ADMINS, subject, message)
+                send_message(syn, args.admin_id, subject, message)
             log.error(message)
 
         log.info('Waiting for {} secs to check new submissions on '
