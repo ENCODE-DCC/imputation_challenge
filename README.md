@@ -91,7 +91,7 @@ $ python validate.py [YOUR_SUBMISSION_BIGWIG]
 
 5) Run `score_leaderboard.py`. Files on `TRUTH_NPY_DIR` should be like `CXXMYY.npy`. Files on `VAR_NPY_DIR` should be like `var_MYY.npy`. Submissions will be downloaded on `SUBMISSION_DOWNLOAD_DIR`.
 	```bash
-	$ NTH=4  # number of threads to parallelize bootstrap scoring
+	$ NTH=3  # number of threads to parallelize bootstrap scoring
 	$ python score_leaderboard.py [EVALUATION_QUEUE_ID] [TRUTH_NPY_DIR] \
 	    --var-npy-dir [VAR_NPY_DIR] \
 	    --submission-dir [SUBMISSION_DOWNLOAD_DIR] \
