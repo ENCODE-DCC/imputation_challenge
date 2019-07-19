@@ -214,7 +214,7 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
                 user_ranks.items(), key=lambda x: sorted(x[1])[1]):
             markdown += '%d | %s | %.2f' % (
                 team_id, get_team_name(syn, team_name_dict, team_id), sorted(ranks)[1]) + '\n'
-        markdown += '\n'
+        markdown += '\n\n'
         markdown_per_cell_assay[cell][assay] = markdown
 
     # group the scores by user

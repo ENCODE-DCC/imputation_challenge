@@ -6,6 +6,7 @@ Author:
 
 import os
 import time
+import re
 import gc
 from score_metrics import Score, normalize_dict
 from score_metrics import mse, mseprom, msegene, mseenh, msevar, mse1obs, mse1imp
@@ -15,10 +16,14 @@ from bw_to_npy import load_bed, load_npy, bw_to_dict, dict_to_arr
 from logger import log
 
 
+RE_PATTERN_SUBMISSION_FNAME = r'^C\d\dM\d\d\..*(bw|bigwig|bigWig|BigWig|npy|npz|np)'
+
 def parse_submission_filename(bw_file):
     """Filename should be CXXMYY.bigwig or CXXMYY.bw
     """
     basename = os.path.basename(bw_file)
+    if len(re.findall(RE_PATTERN_SUBMISSION_FNAME, basename)) == 0:
+        raise Exception('Wrong submission filename. It should be CXXMYY.*bigwig')
     cell = basename[0:3]
     assay = basename[3:6]
     return cell, assay

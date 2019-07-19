@@ -5,14 +5,16 @@ Author:
 """
 
 import os
+import re
 import time
 import shutil
-import gc
+#import gc
 import traceback
 import synapseclient
 import multiprocessing
 from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
+from score_metrics import Score
 from rank import calc_global_ranks, get_cell_name, get_assay_name, get_team_name
 from db import write_to_db, ScoreDBRecord, DB_QUERY_GET, read_scores_from_db
 from io import StringIO
@@ -21,36 +23,58 @@ from logger import log
 
 BIG_INT = 99999999  # for multiprocessing
 
-# LEADERBOARD_WIKI_ID = {
-#     'overall': '594046',
-#     'submission_status': '594047',
-#     'C02': '594048',
-#     'C03': '594049',
-#     'C04': '594050',
-#     'C09': '594051',
-#     'C10': '594052',
-#     'C12': '594053',
-#     'C13': '594054',
-#     'C16': '594055',
-#     'C17': '594056',
-#     'C18': '594057',
-#     'C20': '594058',
-#     'C23': '594059',
-#     'C24': '594060',
-#     'C25': '594061',
-#     'C27': '594062',
-#     'C29': '594063',
-#     'C31': '594064',
-#     'C32': '594065',
-#     'C34': '594068',
-#     'C36': '594069',
-#     'C37': '594070',
-#     'C45': '594071',
-#     'C46': '594072',
-#     'C47': '594073',
-#     'C48': '594074',
-#     'C50': '594075',
-# }
+
+LEADERBOARD_ROUND_VALID_CELL_ASSAY = [
+'C02M22',
+'C03M02',
+'C04M16',
+'C09M20',
+'C10M17',
+'C12M16',
+'C12M32',
+'C13M20',
+'C16M17',
+'C17M04',
+'C17M19',
+'C17M29',
+'C17M32',
+'C18M21',
+'C18M25',
+'C20M22',
+'C23M03',
+'C23M07',
+'C23M26',
+'C23M34',
+'C24M17',
+'C24M25',
+'C25M21',
+'C25M26',
+'C27M03',
+'C27M13',
+'C27M24',
+'C27M26',
+'C29M29',
+'C31M25',
+'C32M08',
+'C32M12',
+'C32M20',
+'C34M02',
+'C34M32',
+'C36M18',
+'C37M29',
+'C45M22',
+'C46M10',
+'C46M18',
+'C46M21',
+'C46M35',
+'C47M18',
+'C48M16',
+'C50M02'
+]
+
+def is_valid_leaderboard_cell_assay(cell, assay):
+    return (cell + assay) in LEADERBOARD_ROUND_VALID_CELL_ASSAY
+
 
 def mkdir_p(path):
     import errno    
@@ -93,7 +117,8 @@ select+%2A+from+evaluation_{eval_queue_id}+\
 &columnConfig2=none%2Cteam%2Cteam%3B%2CNONE\
 &columnConfig3=epochdate%2CDate%2CcreatedOn%3B%2CNONE\
 &columnConfig4=none%2Cname%2Cname%3B%2CNONE\
-&columnConfig5=none%2Cstatus%2Cstatus%3B%2CNONE%2C4'
+&columnConfig5=none%2Cstatus%2Cstatus%3B%2CNONE%2C4\
+}}\n\n'
 
 # markdown supertable to show submission status
 WIKI_TEMPLATE_SUBMISSION_SCORE = \
@@ -107,17 +132,18 @@ and%2Bassay%3D%3D%2522{assay}%2522%2B\
 &columnConfig1=none%2CteamId%2CteamId%3B%2CNONE\
 &columnConfig2=none%2Cteam%2Cteam%3B%2CNONE\
 &columnConfig3=epochdate%2CDate%2CcreatedOn%3B%2CNONE\
-&columnConfig4=none%2Cname%2Cname%3B%2CNONE\
-&columnConfig5=none%2Cstatus%2Cstatus%3B%2CNONE%2C4\
-&columnConfig6=none%2Cmse%2Cmse%3B%2CNONE%2CNONE\
-&columnConfig7=none%2Cgwcorr%2Cgwcorr%3B%2CNONE%2CNONE\
-&columnConfig8=none%2Cgwspear%2Cgwspear%3B%2CNONE%2CNONE\
-&columnConfig9=none%2Cmseprom%2Cmseprom%3B%2CNONE%2CNONE\
-&columnConfig10=none%2Cmsegene%2Cmsegene%3B%2CNONE%2CNONE\
-&columnConfig11=none%2Cmseenh%2Cmseenh%3B%2CNONE%2CNONE\
-&columnConfig12=none%2Cmsevar%2Cmsevar%3B%2CNONE%2CNONE\
-&columnConfig13=none%2Cmse1obs%2Cmse1obs%3B%2CNONE%2CNONE\
-&columnConfig14=none%2Cmse1imp%2Cmse1imp%3B%2CNONE%2C'
+&columnConfig4=none%2Cmse%2Cmse%3B%2CNONE\
+&columnConfig5=none%2Cgwcorr%2Cgwcorr%3B%2CNONE\
+&columnConfig6=none%2Cgwspear%2Cgwspear%3B%2CNONE\
+&columnConfig7=none%2Cmseprom%2Cmseprom%3B%2CNONE\
+&columnConfig8=none%2Cmsegene%2Cmsegene%3B%2CNONE\
+&columnConfig9=none%2Cmseenh%2Cmseenh%3B%2CNONE\
+&columnConfig10=none%2Cmsevar%2Cmsevar%3B%2CNONE\
+&columnConfig11=none%2Cmse1obs%2Cmse1obs%3B%2CNONE\
+&columnConfig12=none%2Cmse1imp%2Cmse1imp%3B%2CNONE\
+}}\n\n'
+
+RE_PATTERN_SUBMISSION_FNAME = r'^C\d\dM\d\d.*(bw|bigwig|bigWig|BigWig)'
 
 def update_wiki(syn, args):
     # calculate ranks and update leaderboard wiki
@@ -129,7 +155,7 @@ def update_wiki(syn, args):
     wiki_id_map = {
         k.split(':')[0]: k.split(':')[1] for k in args.leaderboard_wiki_id.split(',')
     }
-    for k, wiki_id in wiki_id_map:
+    for k, wiki_id in wiki_id_map.items():
         w = syn.getWiki(args.project_id, wiki_id)
 
         if k == 'submission_status':
@@ -146,7 +172,6 @@ def update_wiki(syn, args):
             markdown = ''
             if k in markdown_per_cell_assay:
                 for assay, m in markdown_per_cell_assay[k].items():
-                    markdown += '{} {}'.format(assay, get_assay_name(assay))
                     markdown += m + '\n'
                     markdown += WIKI_TEMPLATE_SUBMISSION_SCORE.format(
                         eval_queue_id=args.eval_queue_id,
@@ -288,7 +313,8 @@ def parse_arguments():
 
 def score_submission(submission, status, args, syn,
                      gene_annotations, enh_annotations):
-    status.status = "INVALID"
+    status['status'] = 'INVALID'
+
     submission_dir = os.path.join(
         os.path.abspath(args.submission_dir), submission.id)
     mkdir_p(submission_dir)
@@ -309,6 +335,10 @@ def score_submission(submission, status, args, syn,
         print()
         submission_fname = submission.filePath
         cell, assay = parse_submission_filename(submission_fname)
+        if not is_valid_leaderboard_cell_assay(cell, assay):
+            raise Exception('Invalid cell/assay combination for '
+                            'leaderboard round')
+
         log.info('Downloading done {}, {}, {}, {}, {}'.format(
             submission_fname, submission.id,
             submission.teamId, cell, assay))
@@ -318,14 +348,14 @@ def score_submission(submission, status, args, syn,
         y_pred_dict = bw_to_dict(submission_fname, args.chrom,
                                  args.window_size, args.blacklist_file,
                                  args.validated)
-        gc.collect()
+        #gc.collect()
         # read truth npy
         npy_true = os.path.join(
             args.true_npy_dir,
             '{}{}.npy'.format(cell, assay))
         y_true_dict = bw_to_dict(npy_true, args.chrom,
                                  args.window_size, args.blacklist_file)
-        gc.collect()
+        #gc.collect()
         # read var npy
         if args.var_npy_dir is not None:   
             var_npy = os.path.join(
@@ -334,7 +364,7 @@ def score_submission(submission, status, args, syn,
             y_var_dict = load_npy(var_npy)
         else:
             y_var_dict = None
-        gc.collect()
+        #gc.collect()
 
         score_outputs = []
         for k, bootstrap_chrom in args.bootstrap_chrom:
@@ -344,12 +374,13 @@ def score_submission(submission, status, args, syn,
                       gene_annotations, enh_annotations,
                       args.window_size, args.prom_loc,
                       y_var_dict)
-            gc.collect()  # free memory for bootstrapped arrays
+            #gc.collect()  # free memory for bootstrapped arrays
             log.info('Scored: {}, {}, {}, {}'.format(
                 submission.id, submission.teamId, k, r))
             score_outputs.append((k, r))
 
-        chosen_score = score_outputs[0]
+        # score to be shown on wiki (first bootstrap score)
+        chosen_score = score_outputs[0][1]
 
         # write to db and report
         for k, score_output in score_outputs:
@@ -364,16 +395,16 @@ def score_submission(submission, status, args, syn,
                     *score_output)
                 write_to_db(score_db_record, args.db_file)
         # mark is as scored
-        status.status = "SCORED"
+        status['status'] = 'SCORED'
 
         # free memory
         y_pred_dict = None
         y_true_dict = None
         y_var_dict = None
-        gc.collect()
+        #gc.collect()
 
         subject = 'Successfully scored submission %s %s %s:\n' % (
-            submission.name, submission.id, submission.userId)
+            submission.name, submission.id, submission.teamId)
         message = 'Score (bootstrap_idx: score)\n'
         message += '\n'.join(
             ['{}: {}'.format(k, s) for k, s in score_outputs])
@@ -381,7 +412,7 @@ def score_submission(submission, status, args, syn,
 
     except Exception as ex1:
         subject = 'Error scoring submission %s %s %s:\n' % (
-            submission.name, submission.id, submission.userId)
+            submission.name, submission.id, submission.teamId)
         st = StringIO()
         traceback.print_exc(file=st)
         message = st.getvalue()
@@ -389,7 +420,7 @@ def score_submission(submission, status, args, syn,
 
     finally:
         # remove submissions (both bigwig, npy) to save disk space
-        # shutil.rmtree(submission_dir)
+        shutil.rmtree(submission_dir)
         pass
 
     # send message
@@ -408,11 +439,11 @@ def score_submission(submission, status, args, syn,
             metadata['cell'] = cell
             metadata['assay'] = assay
 
-        status.annotations = synapseclient.annotations.to_submission_status_annotations(
+        status['annotations'] = synapseclient.annotations.to_submission_status_annotations(
             metadata, is_private=False)
         status = syn.store(status)
 
-    return None
+    return status
 
 
 def main():
@@ -424,9 +455,10 @@ def main():
     gene_annotations = load_bed(args.gene_annotations)
 
     # do GC manually
-    gc.disable()
+    #gc.disable()
 
     syn = synapseclient.login()
+    t0 = time.perf_counter()
 
     while True:
         try:
@@ -438,11 +470,7 @@ def main():
 
                 # distribute jobs
                 ret_vals = []
-                #for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
-                for submission, status in syn.getSubmissionBundles(evaluation):
-                    #print(submission, status)
-                    #if status == 'SCORED':
-                    #    continue
+                for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
                     ret_vals.append(
                         pool.apply_async(score_submission,
                                          (submission, status, args, syn,
@@ -466,9 +494,10 @@ def main():
                 send_message(syn, args.admin_id, subject, message)
             log.error(message)
 
-        log.info('Waiting for {} secs to check new submissions on '
-                 'syn eval queue'.format(args.period))
-        time.sleep(args.period)
+        log.info('Waiting for new submissions...')
+        while time.perf_counter() - t0 < args.period:
+            time.sleep(60)
+        t0 = time.perf_counter()
 
     log.info('All done')
  

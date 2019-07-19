@@ -20,7 +20,17 @@ ScoreDBRecord = namedtuple(
 
 DB_TABLE_SCORE = 'score'
 DB_QUERY_INSERT = 'INSERT INTO {table} ({cols}) VALUES ({values});'
-DB_QUERY_GET = 'SELECT * FROM {table} ORDER BY bootstrap_id, submission_id;'
+#DB_QUERY_GET = 'SELECT * FROM {table} ORDER BY bootstrap_id, submission_id;'
+# to select latest submission
+DB_QUERY_GET = 'SELECT t.* FROM {table} t \
+INNER JOIN ( \
+	SELECT team_id, cell, assay, bootstrap_id, max(submission_id) as MaxSID \
+	FROM {table} \
+	GROUP BY team_id, cell, assay, bootstrap_id \
+) tm WHERE t.team_id = tm.team_id AND t.cell = tm.cell \
+AND t.assay = tm.assay AND t.bootstrap_id = tm.bootstrap_id \
+AND t.submission_id = tm.MaxSID \
+ORDER BY t.bootstrap_id, t.submission_id;'
 
 SCORE_DB_RECORD_VAR_TYPE = ScoreDBRecord(
     submission_id='integer NOT NULL',
