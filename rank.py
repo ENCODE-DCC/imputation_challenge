@@ -6,7 +6,7 @@ Author:
 """
 
 import numpy
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, OrderedDict
 from scipy.stats import rankdata
 from score_metrics import RANK_METHOD_FOR_EACH_METRIC
 from db import DB_QUERY_GET, read_scores_from_db
@@ -179,7 +179,7 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
         Markdown table for ranks
     """
 
-    markdown = ''
+    markdown_per_cell_assay = defaultdict(OrderedDict)
 
     sample_grpd_results = defaultdict(lambda: defaultdict(list))
     all_users = set()
@@ -207,7 +207,7 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
             for team_id in all_users - obs_users:
                 global_scores[index][team_id].append(0.5)                
 
-        markdown += '# {} {} ({} {})\n'.format(cell, get_cell_name(cell), assay, get_assay_name(assay))
+        markdown = '# {} {} ({} {})\n'.format(cell, get_cell_name(cell), assay, get_assay_name(assay))
         markdown += ' | '.join(('Team', 'name', 'rank')) + '\n'
         markdown += '|'.join(('----',)*3) + '\n'
         for (team_id, submission_id), ranks in sorted(
@@ -215,6 +215,7 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
             markdown += '%d | %s | %.2f' % (
                 team_id, get_team_name(syn, team_name_dict, team_id), sorted(ranks)[1]) + '\n'
         markdown += '\n'
+        markdown_per_cell_assay[cell][assay] = markdown
 
     # group the scores by user
     user_grpd_global_scores = defaultdict(list)
@@ -236,16 +237,15 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
         ]))
     global_data = sorted(global_data, key=lambda x: (x.rank, x.score_mean))
 
-    markdown += '\n'
-    markdown += '# Overall Results\n'
-    markdown += ' | '.join(('Team name', 'rank', 'Lower bound',
+    markdown_overall = '# Overall Results\n'
+    markdown_overall += ' | '.join(('Team name', 'rank', 'Lower bound',
                             'Mean', 'Upperbound')) + '\n'
-    markdown += '|'.join(('----',)*6) + '\n'
+    markdown_overall += '|'.join(('----',)*6) + '\n'
     for x in global_data: 
-        markdown += '%s | %.2f | %.2f | %.2f | %.2f' % (
+        markdown_overall += '%s | %.2f | %.2f | %.2f | %.2f' % (
             x.name, x.rank, x.score_lb, x.score_mean, x.score_ub) + '\n'
 
-    return rv, global_data, markdown
+    return rv, global_data, markdown_per_cell_assay, markdown_overall
 
 
 def show_score(rows, team_name_dict=None):
@@ -322,9 +322,13 @@ def main():
         show_score(rows, team_name_dict)
     else:
         log.info('Calculate ranks...')
-        rv, global_data, markdown = calc_global_ranks(
-            rows, args.measures_to_use, team_name_dict)
-        print(markdown)
+        rv, global_data, markdown_per_cell_assay, markdown_overall = \
+            calc_global_ranks(
+                rows, args.measures_to_use, team_name_dict)
+        print(markdown_overall)
+        for _, markdown_per_assay in markdown_per_cell_assay.items():
+            for _, markdown in markdown_per_assay.items():                
+                print(markdown)
 
     log.info('All done.')
 

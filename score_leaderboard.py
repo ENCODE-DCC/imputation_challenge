@@ -21,6 +21,36 @@ from logger import log
 
 BIG_INT = 99999999  # for multiprocessing
 
+# LEADERBOARD_WIKI_ID = {
+#     'overall': '594046',
+#     'submission_status': '594047',
+#     'C02': '594048',
+#     'C03': '594049',
+#     'C04': '594050',
+#     'C09': '594051',
+#     'C10': '594052',
+#     'C12': '594053',
+#     'C13': '594054',
+#     'C16': '594055',
+#     'C17': '594056',
+#     'C18': '594057',
+#     'C20': '594058',
+#     'C23': '594059',
+#     'C24': '594060',
+#     'C25': '594061',
+#     'C27': '594062',
+#     'C29': '594063',
+#     'C31': '594064',
+#     'C32': '594065',
+#     'C34': '594068',
+#     'C36': '594069',
+#     'C37': '594070',
+#     'C45': '594071',
+#     'C46': '594072',
+#     'C47': '594073',
+#     'C48': '594074',
+#     'C50': '594075',
+# }
 
 def mkdir_p(path):
     import errno    
@@ -52,12 +82,83 @@ def send_message(syn, user_ids, subject, message):
     return response
 
 
-def update_wiki(syn, project_id, wiki_id, markdown):
-    w = syn.getWiki(project_id, wiki_id)
-    w.markdown = markdown
-    w = syn.store(w)
-    return w
+# markdown supertable to show submission status
+WIKI_TEMPLATE_SUBMISSION_STATUS = \
+'${{supertable?path=%2Fevaluation%2Fsubmission%2Fquery%3Fquery%3D\
+select+%2A+from+evaluation_{eval_queue_id}+\
+&paging=true&queryTableResults=true&showIfLoggedInOnly=false&pageSize=100\
+&showRowNumber=false&jsonResultsKeyName=rows\
+&columnConfig0=none%2CID%2CobjectId%3B%2CNONE\
+&columnConfig1=none%2CteamId%2CteamId%3B%2CNONE\
+&columnConfig2=none%2Cteam%2Cteam%3B%2CNONE\
+&columnConfig3=epochdate%2CDate%2CcreatedOn%3B%2CNONE\
+&columnConfig4=none%2Cname%2Cname%3B%2CNONE\
+&columnConfig5=none%2Cstatus%2Cstatus%3B%2CNONE%2C4'
 
+# markdown supertable to show submission status
+WIKI_TEMPLATE_SUBMISSION_SCORE = \
+'${{supertable?path=%2Fevaluation%2Fsubmission%2Fquery%3Fquery%3D\
+select+%2A+from+evaluation_{eval_queue_id}+\
+where%2Bstatus%3D%3D%2522SCORED%2522%2Band%2Bcell%3D%3D%2522{cell}%2522%2B\
+and%2Bassay%3D%3D%2522{assay}%2522%2B\
+&paging=true&queryTableResults=true&showIfLoggedInOnly=false&pageSize=100\
+&showRowNumber=false&jsonResultsKeyName=rows\
+&columnConfig0=none%2CID%2CobjectId%3B%2CNONE\
+&columnConfig1=none%2CteamId%2CteamId%3B%2CNONE\
+&columnConfig2=none%2Cteam%2Cteam%3B%2CNONE\
+&columnConfig3=epochdate%2CDate%2CcreatedOn%3B%2CNONE\
+&columnConfig4=none%2Cname%2Cname%3B%2CNONE\
+&columnConfig5=none%2Cstatus%2Cstatus%3B%2CNONE%2C4\
+&columnConfig6=none%2Cmse%2Cmse%3B%2CNONE%2CNONE\
+&columnConfig7=none%2Cgwcorr%2Cgwcorr%3B%2CNONE%2CNONE\
+&columnConfig8=none%2Cgwspear%2Cgwspear%3B%2CNONE%2CNONE\
+&columnConfig9=none%2Cmseprom%2Cmseprom%3B%2CNONE%2CNONE\
+&columnConfig10=none%2Cmsegene%2Cmsegene%3B%2CNONE%2CNONE\
+&columnConfig11=none%2Cmseenh%2Cmseenh%3B%2CNONE%2CNONE\
+&columnConfig12=none%2Cmsevar%2Cmsevar%3B%2CNONE%2CNONE\
+&columnConfig13=none%2Cmse1obs%2Cmse1obs%3B%2CNONE%2CNONE\
+&columnConfig14=none%2Cmse1imp%2Cmse1imp%3B%2CNONE%2C'
+
+def update_wiki(syn, args):
+    # calculate ranks and update leaderboard wiki
+    log.info('Updating wiki...')
+    rows = read_scores_from_db(args.db_file, args.chrom)
+    _, _, markdown_per_cell_assay, markdown_overall = calc_global_ranks(
+        rows, args.measures_to_use, None, syn)
+
+    wiki_id_map = {
+        k.split(':')[0]: k.split(':')[1] for k in args.leaderboard_wiki_id.split(',')
+    }
+    for k, wiki_id in wiki_id_map:
+        w = syn.getWiki(args.project_id, wiki_id)
+
+        if k == 'submission_status':
+            title = 'Submission status'
+            markdown = WIKI_TEMPLATE_SUBMISSION_STATUS.format(
+                eval_queue_id=args.eval_queue_id)
+
+        elif k == 'overall':
+            title = 'Overall ranks'
+            markdown = markdown_overall
+
+        elif k.startswith('C'):
+            title = '{} {}'.format(k, get_cell_name(k))
+            markdown = ''
+            if k in markdown_per_cell_assay:
+                for assay, m in markdown_per_cell_assay[k].items():
+                    markdown += '{} {}'.format(assay, get_assay_name(assay))
+                    markdown += m + '\n'
+                    markdown += WIKI_TEMPLATE_SUBMISSION_SCORE.format(
+                        eval_queue_id=args.eval_queue_id,
+                        cell=k, assay=assay)
+        else:
+            continue
+
+        w.markdown = markdown
+        w.title = title
+        w = syn.store(w)
+
+    return None
 
 def parse_arguments():
     import argparse
@@ -141,9 +242,18 @@ def parse_arguments():
                        help='Do not update submission\'s status on synapse.')
     p_syn.add_argument('--project-id', default='syn17083203',
                        help='Synapse project ID.')
-    p_syn.add_argument('--leaderboard-wiki-id', default='parent:594012',
+    p_syn.add_argument('--leaderboard-wiki-id',
+                       default='overall:594046,submission_status:594047,'
+                               'C02:594048,C03:594049,C04:594050,C09:594051,C10:594052,'
+                               'C12:594053,C13:594054,C16:594055,C17:594056,C18:594057,'
+                               'C20:594058,C23:594059,C24:594060,C25:594061,C27:594062,'
+                               'C29:594063,C31:594064,C32:594065,C34:594068,C36:594069,'
+                               'C37:594070,C45:594071,C46:594072,C47:594073,C48:594074,'
+                               'C50:594075',
                        help='Comma-delimited Synapse wiki ID for leaderboard. '
-                            'Format example: "parent:594012,C01:594013,C02:594014"')
+                            'Required items: overall, submission_status, C??'
+                            'Format example: "overall:594046,'
+                            'submission_status:594047"')
     p_syn.add_argument('--submission-dir', default='./submissions',
                        help='Download submissions here.')
     p_syn.add_argument('--send-msg-to-admin', action='store_true',
@@ -344,14 +454,7 @@ def main():
                 pool.close()
                 pool.join()
 
-            # calculate ranks and update leaderboard wiki
-            log.info('Updating ranks...')
-            rows = read_scores_from_db(args.db_file, args.chrom)
-            _, _, markdown = calc_global_ranks(
-                rows, args.measures_to_use, None, syn)
-
-            update_wiki(syn, args.project_id, args.leaderboard_wiki_id,
-                        markdown)
+            update_wiki(syn, args)
 
         except Exception as ex1:
             st = StringIO()
