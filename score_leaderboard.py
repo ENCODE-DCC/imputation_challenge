@@ -15,7 +15,7 @@ import multiprocessing
 from bw_to_npy import load_bed, load_npy, bw_to_dict
 from score import parse_submission_filename, score
 from score_metrics import Score
-from rank import calc_global_ranks, get_cell_name, get_assay_name, get_team_name
+from rank import calc_global_ranks, get_cell_name, get_assay_name, get_team_name, parse_team_name_tsv
 from db import write_to_db, ScoreDBRecord, DB_QUERY_GET, read_scores_from_db
 from io import StringIO
 from logger import log
@@ -145,12 +145,12 @@ and%2Bassay%3D%3D%2522{assay}%2522%2B\
 
 RE_PATTERN_SUBMISSION_FNAME = r'^C\d\dM\d\d.*(bw|bigwig|bigWig|BigWig)'
 
-def update_wiki(syn, args):
+def update_wiki(syn, team_name_dict, args):
     # calculate ranks and update leaderboard wiki
     log.info('Updating wiki...')
     rows = read_scores_from_db(args.db_file, args.chrom)
     _, _, markdown_per_cell_assay, markdown_overall = calc_global_ranks(
-        rows, args.measures_to_use, None, syn)
+        rows, args.measures_to_use, team_name_dict, syn)
 
     wiki_id_map = {
         k.split(':')[0]: k.split(':')[1] for k in args.leaderboard_wiki_id.split(',')
@@ -261,6 +261,8 @@ def parse_arguments():
                         title='System and resource settings')
     p_sys.add_argument('--nth', type=int, default=1,
                         help='Number of threads to parallelize scoring (per) submission')
+    p_sys.add_argument('--team-name-tsv',
+                        help='TSV file with team_id/team_name (1st col/2nd col).')
     p_syn = parser.add_argument_group(
                         title='Communitation with synapse')
     p_syn.add_argument('--dry-run', action='store_true',
@@ -451,6 +453,12 @@ def main():
 
     args = parse_arguments()
 
+    if args.team_name_tsv is not None:
+        team_name_dict = parse_team_name_tsv(args.team_name_tsv)
+    else:
+        team_name_dict = None
+    print(team_name_dict)
+
     enh_annotations = load_bed(args.enh_annotations)
     gene_annotations = load_bed(args.gene_annotations)
 
@@ -482,7 +490,7 @@ def main():
                 pool.close()
                 pool.join()
 
-            update_wiki(syn, args)
+            update_wiki(syn, team_name_dict, args)
 
         except Exception as ex1:
             st = StringIO()

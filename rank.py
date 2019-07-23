@@ -126,6 +126,8 @@ def get_assay_name(assay_id):
 
 
 def get_team_name(syn, team_name_dict, team_id):
+    if team_name_dict is not None and team_id in team_name_dict and int(team_id)<=100:
+        return team_name_dict[team_id]
     if syn is not None:
         team = syn.restGET('/team/{id}'.format(id=team_id))
         if 'name' in team:
