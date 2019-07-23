@@ -12,6 +12,7 @@ join.log
 *.npy
 *.npz
 *.db
-*.tsv
 __pycache__
 round1
+*.pyc
+

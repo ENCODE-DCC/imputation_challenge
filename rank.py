@@ -5,23 +5,19 @@ Author:
     Jin Lee (leepc12@gmail.com)    
 """
 
-import sys
-import argparse
-import sqlite3
 import numpy
-import time
-from collections import namedtuple, defaultdict
-from score import DB_TABLE_SCORE, ScoreDBRecord
+from collections import namedtuple, defaultdict, OrderedDict
 from scipy.stats import rankdata
-import logging
-
-logging.basicConfig(
-    format='[%(asctime)s %(levelname)s] %(message)s',
-    stream=sys.stdout)
-log = logging.getLogger(__name__)
+from score_metrics import RANK_METHOD_FOR_EACH_METRIC
+from db import DB_QUERY_GET, read_scores_from_db
+from logger import log
 
 
-DB_QUERY_GET = 'SELECT * FROM {table} ORDER BY bootstrap_id, submission_id;'
+GlobalScore = namedtuple(
+    'GlobalScore',
+    ['team_id', 'name', 'score_lb', 'score_mean', 'score_ub', 'rank'])
+
+
 CELL_NAME = {
     'C02': 'adrenal_gland',
     'C20': 'heart_left_ventricle',
@@ -75,6 +71,7 @@ CELL_NAME = {
     'C14': 'ES-I3',
     'C26': 'lower_leg_skin'
 }
+
 ASSAY_NAME = {
     'M01': 'ATAC-seq',
     'M02': 'DNase-seq',
@@ -113,52 +110,6 @@ ASSAY_NAME = {
     'M35': 'H4K91ac'
 }
 
-# Ascending (the bigger the better) or descending order for each metric
-RANK_METHOD_FOR_EACH_METRIC = {
-    'mse': 'DESCENDING',
-    'gwcorr': 'ASCENDING',
-    'gwspear': 'ASCENDING',
-    'mseprom': 'DESCENDING',
-    'msegene': 'DESCENDING',
-    'mseenh': 'DESCENDING',
-    'msevar': 'DESCENDING',
-    'mse1obs': 'DESCENDING',
-    'mse1imp': 'DESCENDING'
-}
-
-GlobalScore = namedtuple(
-    'GlobalScore',
-    ['team_id', 'name', 'score_lb', 'score_mean', 'score_ub', 'rank'])
-
-
-
-TEAM_ID_FOR_ROUND1 = {
-    0: 'Avocado_p0',
-    1: 'Avocado_p1',
-    2: 'Avocado_p2',
-    3: 'Avocado_p3',
-    4: 'Avocado_p4',
-    5: 'Avocado_p5',
-    6: 'Avocado_p6',
-    7: 'Avocado_p7',
-    8: 'Avocado_p8',
-    9: 'Avocado_p9',
-    10: 'Avocado_p10',
-    20: 'Average',
-    1000 : 'BrokenNodes',
-    1010 : 'ENCODE_DCC_Imputes',
-    1020 : 'Hongyang_Li_and_Yuanfang_Guan',
-    1030 : 'KKT-ENCODE-Impute-model_1',
-    1031 : 'KKT-ENCODE-Impute-model_2',
-    1040 : 'LiPingChun',
-    1050 : 'MLeipzig',
-    1060 : 'noml'
-}
-
-
-def get_team_name(team_id):
-    return TEAM_ID_FOR_ROUND1[team_id]
-
 
 def get_cell_name(cell_id):
     if cell_id in CELL_NAME:
@@ -174,48 +125,27 @@ def get_assay_name(assay_id):
         return str(assay_id)
 
 
-def score_record_factory(cursor, row):
-    return ScoreDBRecord(*row)
+def get_team_name(syn, team_name_dict, team_id):
+    if team_name_dict is not None and team_id in team_name_dict and int(team_id)<=100:
+        return team_name_dict[team_id]
+    if syn is not None:
+        team = syn.restGET('/team/{id}'.format(id=team_id))
+        if 'name' in team:
+            return team['name']
+    if team_name_dict is not None:
+        return team_name_dict[team_id]
+    return team_id
 
 
-def read_scores_from_db(db_file, chroms):
-    """Read all rows by matching chromosomes
-    Args:
-        chroms:
-            List of chromosome used for scoring. This will be
-            converted into a comma-separated string and only
-            rows with matching "chroms" field will be retrieved. 
-            This is to filter out records scored with different
-            set of chromosomes.
-    Returns:
-        All rows ordered by bootstrap_id and team_id
-    """
-    # valid_chrs_str = ','.join(sorted(chroms))
-    query = DB_QUERY_GET.format(table=DB_TABLE_SCORE)  #, chroms=valid_chrs_str)
-    log.info(query)
-
-    while True:
-        try:
-            conn = sqlite3.connect(db_file)
-            conn.row_factory = score_record_factory
-            c = conn.cursor()
-            c.execute(query)
-            result = c.fetchall()
-            c.close()
-            conn.close()
-        except sqlite3.OperationalError as e:
-            print(e)
-            conn.close()
-            time.sleep(1)
-            continue
-        else:
-            break
-    
-    if len(result) == 0:
-        print('No records found. '
-            'Did you forget to specify "--chrom"?')
-
-    return result
+def parse_team_name_tsv(tsv):
+    team_name_dict = {}
+    with open(tsv, 'r') as fp:
+        for line in fp.read().strip('\n').split('\n'):
+            arr = line.split('\t')
+            team_id = int(arr[0])
+            team_name = arr[1]
+            team_name_dict[team_id] = team_name
+    return team_name_dict
 
 
 def calc_combined_ranks(rows, measures_to_use):
@@ -244,12 +174,14 @@ def calc_combined_ranks(rows, measures_to_use):
     return dict(zip(zip(team_ids, submission_ids), ranks))
 
 
-def calc_global_ranks(rows, measures_to_use):
+def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
     """Calculate global ranks
 
     Outputs:
         Markdown table for ranks
     """
+
+    markdown_per_cell_assay = defaultdict(OrderedDict)
 
     sample_grpd_results = defaultdict(lambda: defaultdict(list))
     all_users = set()
@@ -277,13 +209,15 @@ def calc_global_ranks(rows, measures_to_use):
             for team_id in all_users - obs_users:
                 global_scores[index][team_id].append(0.5)                
 
-        print('# {} {} ({} {})'.format(cell, get_cell_name(cell), assay, get_assay_name(assay)))
-        print(' | '.join(('Team', 'name', 'rank')))
-        print('|'.join(('----',)*3))
+        markdown = '# {} {} ({} {})\n'.format(cell, get_cell_name(cell), assay, get_assay_name(assay))
+        markdown += ' | '.join(('Team', 'name', 'rank')) + '\n'
+        markdown += '|'.join(('----',)*3) + '\n'
         for (team_id, submission_id), ranks in sorted(
                 user_ranks.items(), key=lambda x: sorted(x[1])[1]):
-            print('%d | %s | %.2f' % (team_id, get_team_name(team_id), sorted(ranks)[1]))
-        print()
+            markdown += '%d | %s | %.2f' % (
+                team_id, get_team_name(syn, team_name_dict, team_id), sorted(ranks)[1]) + '\n'
+        markdown += '\n\n'
+        markdown_per_cell_assay[cell][assay] = markdown
 
     # group the scores by user
     user_grpd_global_scores = defaultdict(list)
@@ -299,52 +233,24 @@ def calc_global_ranks(rows, measures_to_use):
     for team_id, scores in sorted(
             user_grpd_global_scores.items(), key=lambda x: sum(x[1])):
         global_data.append(GlobalScore(*[
-            team_id, get_team_name(team_id), 
+            team_id, get_team_name(syn, team_name_dict, team_id),
             min(scores), sum(scores)/len(scores), max(scores), 
             sorted(user_grpd_global_ranks[team_id])[1]
         ]))
     global_data = sorted(global_data, key=lambda x: (x.rank, x.score_mean))
 
-    print()
-    print('# Overall Results')
-    print(' | '.join(('Team name', 'rank', 'Lower bound',
-                      'Mean', 'Upperbound')))
-    print('|'.join(('----',)*6))
+    markdown_overall = '# Overall Results\n'
+    markdown_overall += ' | '.join(('Team name', 'rank', 'Lower bound',
+                            'Mean', 'Upperbound')) + '\n'
+    markdown_overall += '|'.join(('----',)*6) + '\n'
     for x in global_data: 
-        print('%s | %.2f | %.2f | %.2f | %.2f' % (
-            x.name, x.rank, x.score_lb, x.score_mean, x.score_ub))
+        markdown_overall += '%s | %.2f | %.2f | %.2f | %.2f' % (
+            x.name, x.rank, x.score_lb, x.score_mean, x.score_ub) + '\n'
 
-    return rv, global_data
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(prog='ENCODE Imputation Challenge ranking'
-                                          'script.')
-    parser.add_argument('db_file',
-                        help='SQLite3 DB file with all scores.')
-    parser.add_argument('--show-score-only', action='store_true',
-                        help='Show score (from DB) only')
-    parser.add_argument('--chrom', nargs='+',
-                        default=['all'],
-                        help='List of chromosomes to be used for ranking')
-    parser.add_argument('--measures-to-use', nargs='+',
-                        default=['mse', 'gwcorr', 'gwspear', 'mseprom',
-                                 'msegene', 'mseenh', 'msevar', 'mse1obs',
-                                 'mse1imp'],
-                        help='List of performance measures to be used for ranking')
-    args = parser.parse_args()
-
-    if args.chrom == ['all']:
-        args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
-
-    args.log_level = 'CRITICAL'
-
-    log.setLevel(args.log_level)
-    log.info(sys.argv)
-    return args
+    return rv, global_data, markdown_per_cell_assay, markdown_overall
 
 
-def show_score(rows):
+def show_score(rows, team_name_dict=None):
     print('\t'.join(['submission_id', 'team', 'cell_id', 'cell', 'assay_id', 'assay', 'bootstraip_id', 
                     'mse', 'gwcorr', 'gwspear', 'mseprom', 'msegene', 'mseenh',
                     'msevar', 'mse1obs', 'mse1imp']))
@@ -360,7 +266,7 @@ def show_score(rows):
         mse1imp = x.mse1imp
         
         submission_id= x.submission_id
-        team= get_team_name(x.team_id)
+        team= get_team_name(None, team_name_dict, x.team_id)
         cell_id = x.cell
         cell= get_cell_name(x.cell)
         assay_id = x.assay
@@ -373,6 +279,33 @@ def show_score(rows):
                               msevar, mse1obs, mse1imp]]))
 
 
+def parse_arguments():
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description='ENCODE Imputation Challenge ranking script.')
+    parser.add_argument('db_file',
+                        help='SQLite3 DB file with all scores.')
+    parser.add_argument('--team-name-tsv',
+                        help='TSV file with team_id/team_name (1st col/2nd col).')
+    parser.add_argument('--show-score-only', action='store_true',
+                        help='Show score (from DB) only')
+    parser.add_argument('--chrom', nargs='+',
+                        default=['all'],
+                        help='List of chromosomes to be used for ranking')
+    parser.add_argument('--measures-to-use', nargs='+',
+                        default=['mse', 'gwcorr', 'gwspear', 'mseprom',
+                                 'msegene', 'mseenh', 'msevar', 'mse1obs',
+                                 'mse1imp'],
+                        help='List of performance measures to be used for ranking')
+    args = parser.parse_args()
+
+    if args.chrom == ['all']:
+        args.chrom = ['chr' + str(i) for i in range(1, 23)] + ['chrX']
+
+    return args
+
+
 def main():
     # read params
     args = parse_arguments()
@@ -380,12 +313,24 @@ def main():
     log.info('Reading from DB file...')
     rows = read_scores_from_db(args.db_file, args.chrom)
 
+    if args.team_name_tsv is not None:
+        team_name_dict = parse_team_name_tsv(args.team_name_tsv)
+    else:
+        team_name_dict = None
+    print(team_name_dict)
+
     if args.show_score_only:
         log.info('List all scores...')
-        show_score(rows)
+        show_score(rows, team_name_dict)
     else:
         log.info('Calculate ranks...')
-        rv, global_data = calc_global_ranks(rows, args.measures_to_use)
+        rv, global_data, markdown_per_cell_assay, markdown_overall = \
+            calc_global_ranks(
+                rows, args.measures_to_use, team_name_dict)
+        print(markdown_overall)
+        for _, markdown_per_assay in markdown_per_cell_assay.items():
+            for _, markdown in markdown_per_assay.items():                
+                print(markdown)
 
     log.info('All done.')
 
