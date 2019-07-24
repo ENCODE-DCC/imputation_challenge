@@ -81,6 +81,13 @@ def validate(bw_file, window_size=25):
                           'start: {}, end: {}, value: {}'.format(
                             c, start, end, v))
                     valid = False
+                if end > s:
+                    print('Invalid end interval in chromosome {}. '
+                          'End must be equal to or smaller than chrom size. '
+                          'start: {}, end: {}, value: {}, chrsz: {}'.format(
+                            c, start, end, v, s))
+                    valid = False
+
     except Exception as e:
         traceback.print_exc()
         valid = False
