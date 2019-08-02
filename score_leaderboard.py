@@ -324,10 +324,12 @@ def score_submission(submission, status, args, syn,
     chosen_score = None  # first bootstrap score
     metadata = {
         'id': submission.id,
-        'team': get_team_name(syn, None, submission.teamId)
+        'team': 'undefined'
     }
 
     try:
+        metadata['team'] = get_team_name(syn, None, submission.teamId)
+
         log.info('Downloading submission... {}'.format(submission.id))
         submission = syn.getSubmission(
             submission, 
@@ -413,8 +415,12 @@ def score_submission(submission, status, args, syn,
         log.info(subject + message)
 
     except Exception as ex1:
+        if 'teamId' in submission:
+            teamId = submission.teamId
+        else:
+            teamId = 'undefined'
         subject = 'Error scoring submission %s %s %s:\n' % (
-            submission.name, submission.id, submission.teamId)
+            submission.name, submission.id, teamId)
         st = StringIO()
         traceback.print_exc(file=st)
         message = st.getvalue()
