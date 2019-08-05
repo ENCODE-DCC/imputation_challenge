@@ -8,6 +8,7 @@ import os
 import re
 import time
 import shutil
+import math
 #import gc
 import traceback
 import synapseclient
@@ -381,6 +382,9 @@ def score_submission(submission, status, args, syn,
             #gc.collect()  # free memory for bootstrapped arrays
             log.info('Scored: {}, {}, {}, {}'.format(
                 submission.id, submission.teamId, k, r))
+            for m in r:
+                if math.isnan(m):
+                    raise Exception('NaN found in score {}'.format(r))
             score_outputs.append((k, r))
 
         # score to be shown on wiki (first bootstrap score)
