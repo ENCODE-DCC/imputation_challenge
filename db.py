@@ -5,6 +5,7 @@ Author:
     Jin Lee (leepc12@gmail.com)
 """
 
+import time
 import sys
 import sqlite3
 from collections import namedtuple
