@@ -93,21 +93,24 @@ def validate(bw_file, window_size=25):
                     print(msg)
                     all_msg += msg + '\n'
                     valid = False
+                    break
                 if end > s:
                     msg = 'Invalid end interval in chromosome {}. '\
-                    'End must be equal to or smaller than chrom size. '
+                    'End must be equal to or smaller than chrom size. '\
                     'start: {}, end: {}, value: {}, chrsz: {}'.format(
                             c, start, end, v, s)
                     print(msg)
                     all_msg += msg + '\n'
                     valid = False
+                    break
                 if math.isnan(v) or v == float('inf') or v == float('-inf'):
-                    msg = 'Found NaN or Inf. '\
+                    msg = 'Found NaN or Inf in chromosome {}. '\
                     'start: {}, end: {}, value: {}, chrsz: {}'.format(
                             c, start, end, v, s)
                     print(msg)
                     all_msg += msg + '\n'
                     valid = False
+                    break
 
     except Exception as e:
         st = StringIO()

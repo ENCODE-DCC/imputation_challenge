@@ -15,6 +15,8 @@ import synapseclient
 import multiprocessing
 from validate import validate
 from io import StringIO
+from rank import get_team_name, parse_team_name_tsv
+from score import parse_submission_filename
 from score_leaderboard import mkdir_p, send_message
 from score_leaderboard import WIKI_TEMPLATE_SUBMISSION_STATUS, RE_PATTERN_SUBMISSION_FNAME
 from logger import log
@@ -133,7 +135,7 @@ def parse_arguments():
     p_syn.add_argument('--project-id', default='syn17083203',
                        help='Synapse project ID.')
     p_syn.add_argument('--round2-wiki-id',
-                       default='submission_status:594309',
+                       default='submission_status:594312',
                        help='Comma-delimited Synapse wiki ID for round2.')
     p_syn.add_argument('--submission-dir', default='./submissions',
                        help='Download submissions here.')
@@ -190,6 +192,7 @@ def validate_submission(submission, status, args, syn):
             status['status'] = 'VALIDATED'
             subject = 'Successfully validated submission %s %s %s:\n' % (
                 submission.name, submission.id, submission.teamId)
+            message += '\nSuccess!\n'
         else:
             subject = 'Invalid submission %s %s %s:\n' % (
                 submission.name, submission.id, submission.teamId)
@@ -255,8 +258,7 @@ def main():
                 for submission, status in syn.getSubmissionBundles(evaluation, status='RECEIVED'):
                     ret_vals.append(
                         pool.apply_async(validate_submission,
-                                         (submission, status, args, syn,
-                                          gene_annotations, enh_annotations)))
+                                         (submission, status, args, syn)))
                 # gather
                 for r in ret_vals:
                     r.get(BIG_INT)
@@ -264,7 +266,7 @@ def main():
                 pool.close()
                 pool.join()
 
-            update_wiki(syn, team_name_dict, args)
+            update_wiki_for_round2(syn, team_name_dict, args)
 
         except Exception as ex1:
             st = StringIO()
