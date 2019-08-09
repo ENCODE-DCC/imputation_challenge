@@ -383,8 +383,8 @@ def score_submission(submission, status, args, syn,
             log.info('Scored: {}, {}, {}, {}'.format(
                 submission.id, submission.teamId, k, r))
             for m in r:
-                if math.isnan(m):
-                    raise Exception('NaN found in score {}'.format(r))
+                if math.isnan(m) or m == float('inf') or m == float('-inf'):
+                    raise Exception('NaN or +-Inf found in score {}'.format(r))
             score_outputs.append((k, r))
 
         # score to be shown on wiki (first bootstrap score)

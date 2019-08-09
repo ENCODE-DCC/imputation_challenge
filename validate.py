@@ -8,6 +8,7 @@ Author:
 import pyBigWig
 import json
 import traceback
+import math
 from logger import log
 
 
@@ -41,28 +42,35 @@ CHRSZ = {
 def validate(bw_file, window_size=25):
     log.info('Opening bigwig file...')
     bw = pyBigWig.open(bw_file.strip("'"))
-
+    all_msg = ''
+    
     try:
         valid = True
         # print chrsz
-        log.info('Validating chromosome sizes...')
-        log.info('==== Template ====')
-        print(json.dumps({k: CHRSZ[k] for k in sorted(CHRSZ)}, indent=4))
-        log.info('==== Your submission ====')
-        print(json.dumps({k: bw.chroms()[k] for k in sorted(bw.chroms())}, indent=4))
+        # log.info('Validating chromosome sizes...')
+        # log.info('==== Template ====')
+        # print(json.dumps({k: CHRSZ[k] for k in sorted(CHRSZ)}, indent=4))
+        # log.info('==== Your submission ====')
+        # print(json.dumps({k: bw.chroms()[k] for k in sorted(bw.chroms())}, indent=4))
         # check number of chrs
         if len(bw.chroms()) != len(CHRSZ):
-            print('Invalid number of chromosome {}. It should match with {}'.format(
-                len(bw.chroms()), len(CHRSZ)))
+            msg = 'Invalid number of chromosome {}. It should match with {}'.format(
+                len(bw.chroms()), len(CHRSZ))
+            print(msg)
+            all_msg += msg + '\n'
             valid = False
         # check each chrsz
         for k, v in bw.chroms().items():
             if k not in CHRSZ:
-                print('Invalid chromosome {}'.format(k))
+                msg = 'Invalid chromosome {}'.format(k)
+                print(msg)
+                all_msg += msg + '\n'
                 valid = False
                 continue
             if v != CHRSZ[k]:
-                print('Invalid size {} for chromosome {}'.format(v, k))
+                msg = 'Invalid size {} for chromosome {}'.format(v, k)
+                print(msg)
+                all_msg += msg + '\n'
                 valid = False
                 continue
 
@@ -70,34 +78,54 @@ def validate(bw_file, window_size=25):
         for c, s in CHRSZ.items():
             log.info('Validating chromosome {}...'.format(c))
             if bw.intervals(c) is None:
-                print('No intervals found for chromosome {}. '.format(c))
+                msg = 'No intervals found for chromosome {}. '.format(c)
+                print(msg)
+                all_msg += msg + '\n'
                 valid = False
                 continue
             for start, end, v in bw.intervals(c):
                 if end == s:
                     continue
                 if end-start != window_size:
-                    print('Invalid window size for chromosome {}. '
-                          'start: {}, end: {}, value: {}'.format(
-                            c, start, end, v))
+                    msg = 'Invalid window size for chromosome {}. '\
+                    'start: {}, end: {}, value: {}'.format(
+                            c, start, end, v)
+                    print(msg)
+                    all_msg += msg + '\n'
                     valid = False
+                    break
                 if end > s:
-                    print('Invalid end interval in chromosome {}. '
-                          'End must be equal to or smaller than chrom size. '
-                          'start: {}, end: {}, value: {}, chrsz: {}'.format(
-                            c, start, end, v, s))
+                    msg = 'Invalid end interval in chromosome {}. '\
+                    'End must be equal to or smaller than chrom size. '\
+                    'start: {}, end: {}, value: {}, chrsz: {}'.format(
+                            c, start, end, v, s)
+                    print(msg)
+                    all_msg += msg + '\n'
                     valid = False
+                    break
+                if math.isnan(v) or v == float('inf') or v == float('-inf'):
+                    msg = 'Found NaN or Inf in chromosome {}. '\
+                    'start: {}, end: {}, value: {}, chrsz: {}'.format(
+                            c, start, end, v, s)
+                    print(msg)
+                    all_msg += msg + '\n'
+                    valid = False
+                    break
 
     except Exception as e:
-        traceback.print_exc()
+        st = StringIO()
+        traceback.print_exc(file=st)
+        msg = st.getvalue()
+        print(msg)
+        all_msg += msg + '\n'
         valid = False
 
     if valid:
         log.info('Validation done successfully.')
-        return 0
+        return True, all_msg
     else:
         log.info('Validation failed.')
-        return 1
+        return False, all_msg
 
 def parse_arguments():
     import argparse
@@ -115,8 +143,11 @@ def main():
     # read params
     args = parse_arguments()
 
-    return validate(args.bw, args.window_size)
-
+    valid, _ = validate(args.bw, args.window_size)
+    if valid:
+        return 0
+    else:
+        return 1
 
 if __name__ == '__main__':
     main()
