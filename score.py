@@ -234,7 +234,7 @@ def main():
             score_db_record = ScoreDBRecord(
                 args.submission_id,
                 args.team_id,
-                os.path.basename(bw),
+                os.path.basename(args.pred_npy_or_bw),
                 cell,
                 assay,
                 k,
