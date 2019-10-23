@@ -6,6 +6,7 @@ Author:
 """
 
 import numpy
+import json
 from collections import namedtuple, defaultdict, OrderedDict
 from scipy.stats import rankdata
 from score_metrics import RANK_METHOD_FOR_EACH_METRIC
@@ -190,6 +191,8 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
         sample_grpd_results[(x.cell, x.assay)][x.bootstrap_id].append(x)
         all_users.add(x.team_id)
 
+    # to print ranks per cell_assay
+    tmp_d = dict()
     # group all submissions by cell and assay
     rv = {}
     global_scores = defaultdict(lambda: defaultdict(list))
@@ -212,12 +215,17 @@ def calc_global_ranks(rows, measures_to_use, team_name_dict=None, syn=None):
         markdown = '# {} {} ({} {})\n'.format(cell, get_cell_name(cell), assay, get_assay_name(assay))
         markdown += ' | '.join(('Team', 'name', 'rank')) + '\n'
         markdown += '|'.join(('----',)*3) + '\n'
+        tmp_d['{}{}'.format(cell, assay)] = []
         for (team_id, submission_id), ranks in sorted(
                 user_ranks.items(), key=lambda x: sorted(x[1])[1]):
             markdown += '%d | %s | %.2f' % (
                 team_id, get_team_name(syn, team_name_dict, team_id), sorted(ranks)[1]) + '\n'
+            tmp_d['{}{}'.format(cell, assay)].append(team_id)
         markdown += '\n\n'
         markdown_per_cell_assay[cell][assay] = markdown
+
+    with open('rank_per_cell_assay.tsv', 'w') as fp:
+        fp.write(json.dumps(tmp_d, indent=4))
 
     # group the scores by user
     user_grpd_global_scores = defaultdict(list)
