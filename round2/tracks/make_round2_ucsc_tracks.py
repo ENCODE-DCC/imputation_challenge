@@ -1459,7 +1459,7 @@ for k, v in TEAM_NAME.items():
 #{"type":"coordinate_override","coord":"chr9,36329955,chr9,37537411"},
 for cell_assay, team_ids in RANK_PER_CELL_ASSAY.items():
     hub_url = "http://mitra.stanford.edu/kundaje/ic/track_hubs/"+cell_assay+".txt"
-    print("http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&hgct_customText=" + hub_url)
+    print("http://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&ignoreCookie=1&hgct_customText=" + hub_url)
     with open(cell_assay + '.txt', 'w') as fp:
         STR='''
 hub ENCODE IC BWs for {cell_assay}
@@ -1472,7 +1472,7 @@ longLabel ENCODE Imputation Challenge signal tracks (bigwigs) for {cell_assay}
                 # missing submission of team 3391272
                 continue
             r, g, b = TEAM_COLOR[k]
-            STR+='track type=bigWig name="{name}" priority={priority} smoothingWindow=3 color={r},{g},{b} autoScale=off viewLimits=0:40 visibility=full windowingFunction=maximum bigDataUrl={url}\n'.format(
+            STR+='track type=bigWig name="{name}" maxHeightPixels=40:40:40 priority={priority} smoothingWindow=off color={r},{g},{b} autoScale=off viewLimits=0:40 visibility=full windowingFunction=maximum bigDataUrl={url}\n'.format(
                 name='{name} ({id}, {c})'.format(id=k, name=TEAM_NAME[k], c=cell_assay),
                 url='{root}/{cell_assay}.bigwig'.format(root=URL_ROOT[k], cell_assay=cell_assay),
                 r=r,
