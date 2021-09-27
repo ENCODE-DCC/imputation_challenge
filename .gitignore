@@ -15,4 +15,4 @@ join.log
 __pycache__
 round1
 *.pyc
-
+scripts/
