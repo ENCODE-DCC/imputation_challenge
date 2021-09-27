@@ -14,5 +14,6 @@ join.log
 *.db
 __pycache__
 round1
+round2
 *.pyc
 scripts/
