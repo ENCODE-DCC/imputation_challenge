@@ -12,13 +12,16 @@ from bw_to_npy import write_dict_to_npy, load_npy
 from logger import log
 
 
-def build_var_dict(npys, chroms):
+def build_var_dict(npys, chroms, use_arcsinh):
     y_all = {}
     for c in chroms:
         y_all[c] = []
 
     for f in npys:
         y_dict = load_npy(f)
+        if use_arcsinh:
+            for c, arr in y_dict.items():
+                y_dict[c] = numpy.arcsinh(arr)
         y_dict_norm = normalize_dict(y_dict, chroms)
 
         for c in chroms:
@@ -52,6 +55,9 @@ def parse_arguments():
                               'It should be "all" to write scores to DB file')
     p_score.add_argument('--window-size', default=25, type=int,
                          help='Window size for bigwig in bp')
+    p_score.add_argument('--use-arcsinh', action='store_true',
+                         help='Use arcsinh(x) transform for signals '
+                              'before computing variance. ')
     args = parser.parse_args()
 
     # some submission files have whitespace in path...
@@ -66,7 +72,7 @@ def parse_arguments():
 def main():
     args = parse_arguments()
 
-    var = build_var_dict(args.npy, args.chrom)
+    var = build_var_dict(args.npy, args.chrom, args.use_arcsinh)
     write_dict_to_npy(var, args.out_npy_prefix)
 
     log.info('All done')

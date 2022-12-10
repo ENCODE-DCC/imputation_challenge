@@ -8,6 +8,7 @@ import os
 import time
 import re
 import gc
+import numpy
 from score_metrics import Score, normalize_dict
 from score_metrics import mse, mseprom, msegene, mseenh, msevar, mse1obs, mse1imp
 from score_metrics import gwcorr, gwspear
@@ -145,6 +146,11 @@ def parse_arguments():
     p_score.add_argument('--prom-loc', default=80, type=int,
                          help='Promoter location in a unit of window size '
                               '(--window-size). This is not in bp')
+    p_score.add_argument('--use-arcsinh', action='store_true',
+                         help='Use arcsinh(x) transform for signals in bigwig. '
+                              'This filter is not applied to --var-npy. '
+                              'use build_var_npy.py --use-arcsinh when you build '
+                              'Variance npys.' )
     p_score.add_argument('--validated', action='store_true',
                          help='For validated submissions (not for truth bigwigs) '
                               'with fixed interval length of 25 and valid '
@@ -207,6 +213,11 @@ def main():
     gc.disable()
 
     cell, assay = parse_submission_filename(args.pred_npy_or_bw)
+    if args.use_arcsinh:
+        for c, arr in y_pred_dict.items():
+            y_pred_dict[c] = numpy.arcsinh(arr)          
+        for c, arr in y_true_dict.items():
+            y_true_dict[c] = numpy.arcsinh(arr)          
 
     for k, bootstrap_chrom in args.bootstrap_chrom:
         log.info('Calculating score for bootstrap {} case...'.format(k))
